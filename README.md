@@ -1,6 +1,10 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+# Esp32 Pump
 
-# Blink Scales
-
-
+## OLED
+```cpp
+# define OLED_SDA 4
+# define OLED_SCL 15
+# define OLED_RST 16
+# define SCREEN_WIDTH 128 // OLED display width, in pixels
+# define SCREEN_HEIGHT 64 // OLED display height, in pixels
+```
