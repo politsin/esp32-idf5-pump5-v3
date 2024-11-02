@@ -25,9 +25,9 @@ using std::string;
 #include <driver/gpio.h>
 
 // ENCODER.
-static const gpio_num_t encoderS1 = GPIO_NUM_16;
+static const gpio_num_t encoderS1 = GPIO_NUM_15;
 static const gpio_num_t encoderS2 = GPIO_NUM_17;
-static const gpio_num_t encoderBtn = GPIO_NUM_5;
+static const gpio_num_t encoderBtn = GPIO_NUM_39;
 static const uint32_t debouncsEnc = 100;
 static const uint32_t debouncsBtn = 100;
 rotenc_handle_t handle = {};
@@ -48,7 +48,7 @@ void encoderTask(void *pvParam) {
       enc_current = enc;
       // encMessage = {"encoder", std::to_string(enc)};
       // xQueueSend(mqttQueue, &encMessage, xBlockTime);
-      xTaskNotify(screen, (uint32_t)enc, eSetValueWithOverwrite);
+      // xTaskNotify(screen, (uint32_t)enc, eSetValueWithOverwrite);
       xTaskNotify(counter, (uint32_t)enc, eSetValueWithOverwrite);
       ESP_LOGI(ENC_TAG, "encoder= %ld ticks", enc);
       vTaskDelay(pdMS_TO_TICKS(30));

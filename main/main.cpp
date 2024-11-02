@@ -42,18 +42,18 @@ extern "C" void app_main(void) {
   esp_log_level_set("gpio", ESP_LOG_WARN);
   esp_log_level_set("DendoStepper", ESP_LOG_WARN);
   esp_log_level_set("BUTTON", ESP_LOG_WARN);
-  esp_log_level_set("ENCODER", ESP_LOG_WARN);
+  // esp_log_level_set("ENCODER", ESP_LOG_WARN);
   ESP_LOGW(MAINTAG, "Hello world!!");
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
 
   // tasks.
   // i2c_init(true);
-  // ESP_ERROR_CHECK(i2cdev_init());
+  ESP_ERROR_CHECK(i2cdev_init());
   xTaskCreate(&loop, "loop", min * 3, NULL, 2, NULL);
   // xTaskCreate(stepperTask, "stepper", min * 8, NULL, 1, &stepper);
   // xTaskCreate(tofTask, "tof", min * 32, NULL, 1, &tof);
-  xTaskCreate(blinkTask, "blink", min * 4, NULL, 1, &blink);
-  xTaskCreate(screenTask, "screen", min * 8, NULL, 1, &screen);
+  // xTaskCreate(blinkTask, "blink", min * 4, NULL, 1, &blink);
+  // xTaskCreate(screenTask, "screen", min * 8, NULL, 1, &screen);
   xTaskCreate(buttonTask, "button", min * 4, NULL, 1, &button);
   xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
   xTaskCreate(counterTask, "counter", min * 6, NULL, 1, &counter);

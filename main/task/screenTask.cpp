@@ -20,13 +20,13 @@ void useFonts();
 #define TFT_OFFSETY 40
 
 // #if 0
-#define TFT_MOSI_GPIO 23
+#define TFT_MOSI_GPIO 19
 #define TFT_SCLK_GPIO 18
-#define TFT_CS_GPIO -1
+#define TFT_CS_GPIO 5
 // #define TFT_DC_GPIO 27
-#define TFT_DC_GPIO 25
-#define TFT_RESET_GPIO 33
-#define TFT_BL_GPIO 32
+#define TFT_DC_GPIO 16
+#define TFT_RESET_GPIO 23
+#define TFT_BL_GPIO 4
 // #endif
 
 #include "util/config.h"

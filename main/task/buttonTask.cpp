@@ -4,8 +4,8 @@
 #include "main.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-static const Pintype BUTTON_PIN1 = GPIO_NUM_12;
-static const Pintype BUTTON_PIN2 = GPIO_NUM_14;
+static const Pintype BUTTON_PIN1 = GPIO_NUM_38;
+static const Pintype BUTTON_PIN2 = GPIO_NUM_37;
 
 #include <button.h>
 #include <esp_log.h>

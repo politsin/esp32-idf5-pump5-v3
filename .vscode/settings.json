@@ -12,7 +12,7 @@
     "interface/ftdi/esp32_devkitj_v1.cfg",
     "target/esp32.cfg"
   ],
-  "idf.portWin": "COM7",
+  "idf.portWin": "COM9",
   "idf.pythonBinPathWin": "W:\\soft\\esp\\tools\\python_env\\idf5.1_py3.11_env\\Scripts\\python.exe",
   "idf.toolsPathWin": "W:\\soft\\esp\\tools",
   "idf.flashType": "UART"

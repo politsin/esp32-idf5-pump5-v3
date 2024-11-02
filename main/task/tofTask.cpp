@@ -8,8 +8,8 @@
 #define TOF_TAG "TOF"
 
 #define I2C_FREQ_HZ 1000000
-#define I2C_SDA GPIO_NUM_26
-#define I2C_SCL GPIO_NUM_27
+#define I2C_SDA GPIO_NUM_21
+#define I2C_SCL GPIO_NUM_22
 
 // #define TOF_ADDRESS 0x39
 #define TOF_ADDRESS 0x1e
@@ -55,7 +55,7 @@ int findFirstPeak(const uint16_t *data, int arraySize);
 
 TaskHandle_t tof;
 void tofTask(void *pvParam) {
-  const TickType_t xBlockTime = pdMS_TO_TICKS(200);
+  const TickType_t xBlockTime = pdMS_TO_TICKS(50);
   tof_t tof;
   memset(&tof, 0, sizeof(tof_t));
   tofBegin(&tof);
@@ -77,102 +77,10 @@ void tofTask(void *pvParam) {
   static const TickType_t xOffTime = pdMS_TO_TICKS(250);
   while (true) {
     prox = tofGetProximity(&tof);
-    ESP_LOGI(TOF_TAG, "%u", prox);
+    // ESP_LOGI(TOF_TAG, "%u", prox);
+    printf("%u\n", prox);
     vTaskDelay(xBlockTime);
   }
-}
-
-void old() {
-  // if (false) {
-  //   amb = tofGetAmbient(&tof);
-  //   ESP_LOGI(TOF_TAG, "TOF abm= %u | prox= %u", amb, prox);
-  //   // ESP_LOGI(TOF_TAG, "tof!");
-  // }
-  // // Заполняем массив значениями из tofGetProximity
-  // startTicks = esp_timer_get_time();
-  // step.enableMotor();
-  // step.runPos(-steps);
-  // vTaskDelay(pdMS_TO_TICKS(200));
-  // memset(proxArr, 0, sizeof(proxArr));
-  // for (int i = 0; i < arraySize; i++) {
-  //   proxArr[i] = tofGetProximity(&tof);
-  //   // vTaskDelay(pdMS_TO_TICKS(10)); // Небольшая задержка между чтениями
-  // }
-  // endTicks = esp_timer_get_time();
-  // executionTimeMs = (endTicks - startTicks) / 1000;
-  // // Выводим массив на печать
-  // // ESP_LOGI(TOF_TAG, "Массив значений proxArr:");
-  // for (int i = 0; i < arraySize; i++) {
-  //   // ESP_LOGI(TOF_TAG, "proxArr[%d] = %u", i, proxArr[i]);
-  // }
-  // // Выводим время выполнения
-  // ESP_LOGI(TOF_TAG, "Время выполнения цикла: %llu mk", executionTimeMs);
-  // vTaskDelay(xOffTime + pdMS_TO_TICKS(steps * 1000 / speed));
-  // step.disableMotor();
-  // ESP_LOGI(TOF_TAG, "done");
-  // prox = tofGetProximity(&tof);
-  // // 1. Smooth the data
-  // uint16_t smoothedProxArr[arraySize];
-  // int windowSize = 25;
-  // // Adjust this value for desired smoothing level (odd number)
-  // smoothData(proxArr, smoothedProxArr, arraySize, windowSize);
-  // for (int i = 0; i < arraySize; i++) {
-  //   // ESP_LOGI(TOF_TAG, "proxArr[%d] = %u  \t | %u", i, proxArr[i],
-  //   //          smoothedProxArr[i]);
-  // }
-
-  // // 2. Find the first peak
-  // int peakIndex = findFirstPeak(smoothedProxArr, arraySize);
-  // // Adjust threshold as needed
-
-  // if (peakIndex != -1) {
-  //   ESP_LOGI(TOF_TAG, "First corner detected at index: %d, Value: %u",
-  //            peakIndex, smoothedProxArr[peakIndex]);
-  //   if (peakIndex > 200) {
-  //     step.enableMotor();
-  //     step.runPos(diff);
-  //     vTaskDelay(xOffTime + pdMS_TO_TICKS(diff * 1000 / speed));
-  //     step.disableMotor();
-  //   }
-  // } else {
-  //   ESP_LOGI(TOF_TAG, "No corner detected.");
-  // }
-}
-
-// Function to smooth the data using a moving average filter
-void smoothData(const uint16_t *input, uint16_t *output, int arraySize,
-                int windowSize) {
-  if (windowSize % 2 == 0) {
-    ESP_LOGE(TOF_TAG, "Window size for smoothing must be odd.");
-    return;
-  }
-  int halfWindowSize = windowSize / 2;
-  for (int i = 0; i < arraySize; i++) {
-    int sum = 0;
-    int count = 0;
-    for (int j = std::max(0, i - halfWindowSize);
-         j <= std::min(arraySize - 1, i + halfWindowSize); j++) {
-      sum += input[j];
-      count++;
-    }
-    output[i] = sum / count;
-  }
-}
-
-// Function to find the first peak in the smoothed data
-int findFirstPeak(const uint16_t *data, int arraySize) {
-  bool bottom = false;
-  int min = 600;
-  int max = 900;
-  for (int i = 1; i < arraySize; i++) {
-    if (data[i] < min) {
-      bottom = true;
-    }
-    if (bottom && data[i] > max) {
-      return i;
-    }
-  }
-  return -1;
 }
 
 esp_err_t tofBegin(tof_t *tof) {
