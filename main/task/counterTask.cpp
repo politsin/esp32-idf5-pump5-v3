@@ -53,6 +53,7 @@ void counterTask(void *pvParam) {
   uint32_t i = 0;
   uint32_t notify_value;
   int32_t encoder = 0;
+  int32_t target = app_config.steps;
   gpio_set_level(PUMP, 0);
   while (true) {
     if (xTaskNotifyWait(0, 0, &notify_value, 0) == pdTRUE) {
@@ -70,17 +71,17 @@ void counterTask(void *pvParam) {
         gpio_set_level(PUMP, isOn);
       } else {
         encoder = (int32_t)notify_value;
+        target = app_config.steps + encoder;
         app_config.encoder = encoder;
         config->set_item("steps", app_config.encoder);
         config->commit();
         ESP_LOGW(COUNTER_TAG, "Encoder %ld", encoder);
       }
     }
-    if (rot > app_config.steps + encoder) {
+    if (rot > target) {
       isOn = false;
       gpio_set_level(PUMP, isOn);
-      ESP_LOGI(COUNTER_TAG, "STOP %ld | done = %ld", app_config.steps + encoder,
-               rot);
+      ESP_LOGI(COUNTER_TAG, "STOP %ld | done = %ld", target, rot);
       isOn = false;
       vTaskDelay(pdMS_TO_TICKS(1000));
       rot = 0;
@@ -89,7 +90,7 @@ void counterTask(void *pvParam) {
     if ((i++ % 10) == true) {
       // Выводим значение счетчика
       ESP_LOGI(COUNTER_TAG, "Counter[%d]: %ld  >>  %ld", (int)isOn, rot,
-               app_config.steps);
+               target);
     }
     vTaskDelay(xBlockTime);
   }

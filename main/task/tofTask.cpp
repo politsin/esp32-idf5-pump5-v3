@@ -77,7 +77,7 @@ void tofTask(void *pvParam) {
   static const TickType_t xOffTime = pdMS_TO_TICKS(250);
   while (true) {
     prox = tofGetProximity(&tof);
-    // ESP_LOGI(TOF_TAG, "%u", prox);
+    ESP_LOGI(TOF_TAG, "%u", prox);
     printf("%u\n", prox);
     vTaskDelay(xBlockTime);
   }
