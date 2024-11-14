@@ -1,2 +1,4 @@
 build/
 components/components/*
+dependencies.lock
+managed_components

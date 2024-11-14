@@ -4,7 +4,7 @@
 #include <freertos/task.h>
 #include <iostream>
 using std::string;
-#include "rotary_encoder.h"
+// #include "rotary_encoder.h"
 
 extern TaskHandle_t encoder;
 void encoderTask(void *pvParam);

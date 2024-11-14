@@ -25,7 +25,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg) {
 }
 
 app_config_t app_config = {
-    .steps = 1330,
+    .steps = 1210,
     .encoder = 0,
 };
 

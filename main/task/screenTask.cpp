@@ -10,308 +10,140 @@ static constexpr Pintype LED = GPIO_NUM_22;
 #include <rom/gpio.h>
 #define SCREEN_TAG "SCREEN"
 
-#define FS_TAG "SPIFFS"
-void initSPIFFS();
-void useFonts();
-
-#define TFT_WIDTH 135
-#define TFT_HEIGHT 240
-#define TFT_OFFSETX 52
-#define TFT_OFFSETY 40
-
-// #if 0
-#define TFT_MOSI_GPIO 19
-#define TFT_SCLK_GPIO 18
-#define TFT_CS_GPIO 5
-// #define TFT_DC_GPIO 27
-#define TFT_DC_GPIO 16
-#define TFT_RESET_GPIO 23
-#define TFT_BL_GPIO 4
 // #endif
 
 #include "util/config.h"
 
 #include "esp_spiffs.h"
 #include "fontx.h"
-#include "hx711Task.h"
 #include "st7789.h"
 #include <main.h>
 #include <string.h>
 #include <sys/dirent.h>
-#define INTERVAL 400
-#define WAIT vTaskDelay(INTERVAL)
+#include <hal/lv_hal_disp.h>
+#include <screen/tft_driver.h>
+#include <screen/power_driver.h>
+#include <screen/product_pins.h>
+#include <esp_timer.h>
+#include <benchmark/lv_demo_benchmark.h>
+// #include "hx711Task.h"
 
-TickType_t FillTest(TFT_t *dev, int width, int height);
-TickType_t ColorBarTest(TFT_t *dev, int width, int height);
-TickType_t ArrowTest(TFT_t *dev, FontxFile *fx, int width, int height);
-void printText(TFT_t *dev, FontxFile *fx, char *text);
-void printSteps(TFT_t *dev, FontxFile *fx);
+// #include <TFT_eSPI.h>
+// #include <TFT_config.h>
+
+// TFT Driver	ST7789
+#define TFT_BL 4
+#define TFT_CS 5
+#define TFT_DC 16
+#define TFT_MOSI 19
+#define TFT_SCLK 18
+#define TFT_RST 23
+
+static SemaphoreHandle_t lvgl_mux = NULL;
+// contains internal graphic buffer(s) called draw buffer(s)
+static lv_disp_draw_buf_t disp_buf;
+extern "C" {
+  // contains callback functions
+  lv_disp_drv_t disp_drv;
+}
+
+#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
+#define EXAMPLE_LVGL_TASK_MIN_DELAY_MS 1
+#define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500
+bool example_lvgl_lock(int timeout_ms);
+void example_lvgl_unlock(void);
+static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
+static void example_increase_lvgl_tick(void *arg);
 
 TaskHandle_t screen;
 void screenTask(void *pvParam) {
   const TickType_t xBlockTime = pdMS_TO_TICKS(2000);
+  uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
 
-  initSPIFFS();
+  power_driver_init();
+  display_init();
+  lv_init();
 
-  TFT_t dev;
-  spi_master_init(&dev, TFT_MOSI_GPIO, TFT_SCLK_GPIO, TFT_CS_GPIO, TFT_DC_GPIO,
-                  TFT_RESET_GPIO, TFT_BL_GPIO);
-  lcdInit(&dev, TFT_WIDTH, TFT_HEIGHT, TFT_OFFSETX, TFT_OFFSETY);
+  lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(
+      AMOLED_HEIGHT * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+  assert(buf1);
+  lv_color_t *buf2 = (lv_color_t *)heap_caps_malloc(
+      AMOLED_HEIGHT * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+  assert(buf2);
+  lv_disp_draw_buf_init(&disp_buf, buf1, buf2, AMOLED_HEIGHT * 20);
 
-  // FillTest(&dev, TFT_WIDTH, TFT_HEIGHT);
-  // ColorBarTest(&dev, TFT_WIDTH, TFT_HEIGHT);
-  vTaskDelay(50);
-  lcdFillScreen(&dev, BLACK);
-  // xTaskNotify(hx711, 0, eSetValueWithOverwrite);
-  // Fonts:
-  FontxFile fx24G[2];
-  FontxFile fx32G[2];
-  InitFontx(fx24G, "/spiffs/ILGH24XB.FNT", ""); // 12x24Dot Gothic
-  InitFontx(fx32G, "/spiffs/ILGH32XB.FNT", ""); // 16x32Dot Gothic
-  // Scales:
-  float weight;
-  int32_t val = 0;
-  uint32_t notify_value;
-  // char value[16];
+  ESP_LOGI(SCREEN_TAG, "Register display driver to LVGL");
+  lv_disp_drv_init(&disp_drv);
+  disp_drv.hor_res = AMOLED_HEIGHT;
+  disp_drv.ver_res = AMOLED_WIDTH;
+  disp_drv.flush_cb = example_lvgl_flush_cb;
+  disp_drv.draw_buf = &disp_buf;
+  disp_drv.full_refresh = DISPLAY_FULLRESH;
+  lv_disp_drv_register(&disp_drv);
 
+  ESP_LOGI(SCREEN_TAG, "Install LVGL tick timer");
+  // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
+  const esp_timer_create_args_t lvgl_tick_timer_args = {
+      .callback = &example_increase_lvgl_tick,
+      .arg = NULL,
+      .dispatch_method = ESP_TIMER_TASK,
+      .name = "lvgl_tick",
+      .skip_unhandled_events = false};
+  esp_timer_handle_t lvgl_tick_timer = NULL;
+  ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+  ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer,
+                                           EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
+
+  lvgl_mux = xSemaphoreCreateRecursiveMutex();
+  assert(lvgl_mux);
+
+  ESP_LOGI(SCREEN_TAG, "Display LVGL");
+  if (example_lvgl_lock(-1)) {
+    // lv_demo_widgets();
+    lv_demo_benchmark();
+    // lv_demo_stress();
+    // lv_demo_music();
+    // Release the mutex
+    example_lvgl_unlock();
+  }
   while (true) {
-    if (true) {
-      ESP_LOGW(SCREEN_TAG, "screen!");
-      if (xTaskNotifyWait(0, 0, &notify_value, 0) == pdTRUE) {
-        val = (int32_t)notify_value;
-        // weight = (float)scale / 1000;
-        char value[16];
-        sprintf(value, "enc: %ld", val);
-        // sprintf(data, "%0.3f", val);
-        // ESP_LOGI(SCREEN_TAG, "w: %0.2f", weight);
-        // printText(&dev, fx32G, value);
-        printSteps(&dev, fx32G);
-      }
+    if (example_lvgl_lock(-1)) {
+      task_delay_ms = lv_timer_handler();
+      // Release the mutex
+      example_lvgl_unlock();
+    }
+    if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS) {
+      task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
+    } else if (task_delay_ms < EXAMPLE_LVGL_TASK_MIN_DELAY_MS) {
+      task_delay_ms = EXAMPLE_LVGL_TASK_MIN_DELAY_MS;
     }
     vTaskDelay(xBlockTime);
   }
 }
 
-void printSteps(TFT_t *dev, FontxFile *fx) {
-  char speed[16];
-  char steps[16];
-  sprintf(speed, "encoder: %ld", app_config.encoder);
-  sprintf(steps, "steps: %ld", app_config.steps);
 
-  int width = CONFIG_WIDTH;
-  int height = CONFIG_HEIGHT;
-  // get font width & height
-  uint8_t buffer[FontxGlyphBufSize];
-  uint8_t fontWidth;
-  uint8_t fontHeight;
-  GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-  lcdFillScreen(dev, BLACK);
-  lcdSetFontDirection(dev, DIRECTION90);
-
-  uint16_t xpos;
-  uint16_t ypos;
-  uint16_t color = WHITE;
-  uint8_t ascii[24];
-  strcpy((char *)ascii, speed);
-  xpos = ((width - fontHeight) / 2) - 1;
-  ypos = (height - (strlen((char *)ascii) * fontWidth)) / 2;
-  lcdDrawString(dev, fx, xpos - 30, ypos, ascii, color);
-  strcpy((char *)ascii, steps);
-  lcdDrawString(dev, fx, xpos - 60, ypos, ascii, color);
+static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+{
+  int offsetx1 = area->x1;
+  int offsetx2 = area->x2;
+  int offsety1 = area->y1;
+  int offsety2 = area->y2;
+  display_push_colors(offsetx1, offsety1, offsetx2 + 1, offsety2 + 1,
+                      (uint16_t *)color_map);
 }
 
-void printText(TFT_t *dev, FontxFile *fx, char *text) {
-  int width = CONFIG_WIDTH;
-  int height = CONFIG_HEIGHT;
-  // get font width & height
-  uint8_t buffer[FontxGlyphBufSize];
-  uint8_t fontWidth;
-  uint8_t fontHeight;
-  GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-  // ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
-
-  uint16_t xpos;
-  uint16_t ypos;
-  uint8_t ascii[24];
-  uint16_t color;
-
-  lcdFillScreen(dev, BLACK);
-
-  strcpy((char *)ascii, text);
-  xpos = ((width - fontHeight) / 2) - 1;
-  ypos = (height - (strlen((char *)ascii) * fontWidth)) / 2;
-  lcdSetFontDirection(dev, DIRECTION90);
-  color = WHITE;
-  lcdDrawString(dev, fx, xpos, ypos, ascii, color);
+static void example_increase_lvgl_tick(void *arg) {
+  /* Tell LVGL how many milliseconds has elapsed */
+  lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
 }
 
-void useFonts() {
-  FontxFile fx16G[2];
-  FontxFile fx24G[2];
-  FontxFile fx32G[2];
-  FontxFile fx32L[2];
-  InitFontx(fx16G, "/spiffs/ILGH16XB.FNT", ""); // 8x16Dot Gothic
-  InitFontx(fx24G, "/spiffs/ILGH24XB.FNT", ""); // 12x24Dot Gothic
-  InitFontx(fx32G, "/spiffs/ILGH32XB.FNT", ""); // 16x32Dot Gothic
-  InitFontx(fx32L, "/spiffs/LATIN32B.FNT", ""); // 16x32Dot Latin
-
-  FontxFile fx16M[2];
-  FontxFile fx24M[2];
-  FontxFile fx32M[2];
-  InitFontx(fx16M, "/spiffs/ILMH16XB.FNT", ""); // 8x16Dot Mincyo
-  InitFontx(fx24M, "/spiffs/ILMH24XB.FNT", ""); // 12x24Dot Mincyo
-  InitFontx(fx32M, "/spiffs/ILMH32XB.FNT", ""); // 16x32Dot Mincyo
-};
-
-static void SPIFFS_Directory(const char *path) {
-  DIR *dir = opendir(path);
-  assert(dir != NULL);
-  while (true) {
-    struct dirent *pe = readdir(dir);
-    if (!pe)
-      break;
-    ESP_LOGI(__FUNCTION__, "d_name=%s d_ino=%d d_type=%x", pe->d_name,
-             pe->d_ino, pe->d_type);
-  }
-  closedir(dir);
+bool example_lvgl_lock(int timeout_ms) {
+  // Convert timeout in milliseconds to FreeRTOS ticks
+  // If `timeout_ms` is set to -1, the program will block until the condition is
+  // met
+  const TickType_t timeout_ticks =
+      (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+  return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
-void initSPIFFS() {
-  ESP_LOGI(FS_TAG, "Initializing SPIFFS");
-
-  esp_vfs_spiffs_conf_t conf = {.base_path = "/spiffs",
-                                .partition_label = NULL,
-                                .max_files = 10,
-                                .format_if_mount_failed = true};
-
-  // Use settings defined above toinitialize and mount SPIFFS filesystem.
-  // Note: esp_vfs_spiffs_register is anall-in-one convenience function.
-  esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-  if (ret != ESP_OK) {
-    if (ret == ESP_FAIL) {
-      ESP_LOGE(FS_TAG, "Failed to mount or format filesystem");
-    } else if (ret == ESP_ERR_NOT_FOUND) {
-      ESP_LOGE(FS_TAG, "Failed to find SPIFFS partition");
-    } else {
-      ESP_LOGE(FS_TAG, "Failed to initialize SPIFFS (%s)",
-               esp_err_to_name(ret));
-    }
-    return;
-  }
-
-  size_t total = 0, used = 0;
-  ret = esp_spiffs_info(NULL, &total, &used);
-  if (ret != ESP_OK) {
-    ESP_LOGE(FS_TAG, "Failed to get SPIFFS partition information (%s)",
-             esp_err_to_name(ret));
-  } else {
-    ESP_LOGI(FS_TAG, "Partition size: total: %d, used: %d", total, used);
-  }
-
-  SPIFFS_Directory("/spiffs/");
-}
-
-TickType_t FillTest(TFT_t *dev, int width, int height) {
-  TickType_t startTick, endTick, diffTick;
-  startTick = xTaskGetTickCount();
-
-  lcdFillScreen(dev, RED);
-  vTaskDelay(50);
-  lcdFillScreen(dev, GREEN);
-  vTaskDelay(50);
-  lcdFillScreen(dev, BLUE);
-  vTaskDelay(50);
-
-  endTick = xTaskGetTickCount();
-  diffTick = endTick - startTick;
-  ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%ld", diffTick * portTICK_PERIOD_MS);
-  return diffTick;
-}
-
-TickType_t ColorBarTest(TFT_t *dev, int width, int height) {
-  TickType_t startTick, endTick, diffTick;
-  startTick = xTaskGetTickCount();
-
-  uint16_t x1, x2;
-  x1 = width / 3;
-  x2 = (width / 3) * 2;
-  lcdDrawFillRect(dev, 0, 0, x1 - 1, height - 1, RED);
-  vTaskDelay(1);
-  lcdDrawFillRect(dev, x1, 0, x2 - 1, height - 1, BLUE);
-  vTaskDelay(1);
-  lcdDrawFillRect(dev, x2, 0, width - 1, height - 1, WHITE);
-
-  endTick = xTaskGetTickCount();
-  diffTick = endTick - startTick;
-  ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%ld", diffTick * portTICK_PERIOD_MS);
-  return diffTick;
-}
-
-TickType_t ArrowTest(TFT_t *dev, FontxFile *fx, int width, int height) {
-  TickType_t startTick, endTick, diffTick;
-  startTick = xTaskGetTickCount();
-
-  // get font width & height
-  uint8_t buffer[FontxGlyphBufSize];
-  uint8_t fontWidth;
-  uint8_t fontHeight;
-  GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-  // ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
-
-  uint16_t xpos;
-  uint16_t ypos;
-  int stlen;
-  uint8_t ascii[24];
-  uint16_t color;
-
-  lcdFillScreen(dev, BLACK);
-
-  strcpy((char *)ascii, "ST7789");
-  if (width < height) {
-    xpos = ((width - fontHeight) / 2) - 1;
-    ypos = (height - (strlen((char *)ascii) * fontWidth)) / 2;
-    lcdSetFontDirection(dev, DIRECTION90);
-  } else {
-    ypos = ((height - fontHeight) / 2) - 1;
-    xpos = (width - (strlen((char *)ascii) * fontWidth)) / 2;
-    lcdSetFontDirection(dev, DIRECTION0);
-  }
-  color = WHITE;
-  lcdDrawString(dev, fx, xpos, ypos, ascii, color);
-
-  lcdSetFontDirection(dev, 0);
-  color = RED;
-  lcdDrawFillArrow(dev, 10, 10, 0, 0, 5, color);
-  strcpy((char *)ascii, "0,0");
-  lcdDrawString(dev, fx, 0, 30, ascii, color);
-
-  color = GREEN;
-  lcdDrawFillArrow(dev, width - 11, 10, width - 1, 0, 5, color);
-  // strcpy((char *)ascii, "79,0");
-  sprintf((char *)ascii, "%d,0", width - 1);
-  stlen = strlen((char *)ascii);
-  xpos = (width - 1) - (fontWidth * stlen);
-  lcdDrawString(dev, fx, xpos, 30, ascii, color);
-
-  color = GRAY;
-  lcdDrawFillArrow(dev, 10, height - 11, 0, height - 1, 5, color);
-  // strcpy((char *)ascii, "0,159");
-  sprintf((char *)ascii, "0,%d", height - 1);
-  ypos = (height - 11) - (fontHeight) + 5;
-  lcdDrawString(dev, fx, 0, ypos, ascii, color);
-
-  color = CYAN;
-  lcdDrawFillArrow(dev, width - 11, height - 11, width - 1, height - 1, 5,
-                   color);
-  // strcpy((char *)ascii, "79,159");
-  sprintf((char *)ascii, "%d,%d", width - 1, height - 1);
-  stlen = strlen((char *)ascii);
-  xpos = (width - 1) - (fontWidth * stlen);
-  lcdDrawString(dev, fx, xpos, ypos, ascii, color);
-
-  endTick = xTaskGetTickCount();
-  diffTick = endTick - startTick;
-  ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%ld", diffTick * portTICK_PERIOD_MS);
-  return diffTick;
-}
+void example_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }

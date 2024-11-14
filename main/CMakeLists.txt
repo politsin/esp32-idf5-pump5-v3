@@ -11,8 +11,10 @@ idf_component_register(
     "task/stepperTask.cpp"
     "task/tofTask.cpp"
     # screen
-    "screen/fontx.cpp"
-    "screen/st7789.cpp"
+    "screen/display_esp32.c"
+    "screen/initSequence.c"
+    "screen/power_driver.cpp"
+    # "screen/st7789.cpp"
     # util
     "util/config.cpp"
     "util/nvsInit.cpp"
@@ -21,5 +23,4 @@ idf_component_register(
     "."
     "util"
     "task"
-    "screen"
 )

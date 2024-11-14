@@ -53,10 +53,10 @@ extern "C" void app_main(void) {
   // xTaskCreate(stepperTask, "stepper", min * 8, NULL, 1, &stepper);
   // xTaskCreate(tofTask, "tof", min * 32, NULL, 1, &tof);
   // xTaskCreate(blinkTask, "blink", min * 4, NULL, 1, &blink);
-  // xTaskCreate(screenTask, "screen", min * 8, NULL, 1, &screen);
   xTaskCreate(buttonTask, "button", min * 4, NULL, 1, &button);
   xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
   xTaskCreate(counterTask, "counter", min * 6, NULL, 1, &counter);
+  xTaskCreatePinnedToCore(screenTask, "screen", min * 8, NULL, 1, &screen, 1);
   // xTaskCreatePinnedToCore(uartTask, "uart", min * 10, NULL, 1, &uart, 0);
   // xTaskCreate(hx711Task, "hx711", min * 16, NULL, 1, &hx711);
   // xTaskCreate(i2cScanTask, "i2cScan", min * 4, NULL, 5, &i2cScan);

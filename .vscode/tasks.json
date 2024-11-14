@@ -21,10 +21,7 @@
       "problemMatcher": [
         {
           "owner": "cpp",
-          "fileLocation": [
-            "autoDetect",
-            "${workspaceFolder}"
-          ],
+          "fileLocation": ["autoDetect", "${workspaceFolder}"],
           "pattern": {
             "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
             "file": 1,
@@ -46,10 +43,7 @@
       "command": "${command:espIdf.setTarget}",
       "problemMatcher": {
         "owner": "cpp",
-        "fileLocation": [
-          "autoDetect",
-          "${workspaceFolder}"
-        ],
+        "fileLocation": ["autoDetect", "${workspaceFolder}"],
         "pattern": {
           "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
           "file": 1,
@@ -80,10 +74,7 @@
       "problemMatcher": [
         {
           "owner": "cpp",
-          "fileLocation": [
-            "autoDetect",
-            "${workspaceFolder}"
-          ],
+          "fileLocation": ["autoDetect", "${workspaceFolder}"],
           "pattern": {
             "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
             "file": 1,
@@ -115,10 +106,7 @@
       "problemMatcher": [
         {
           "owner": "cpp",
-          "fileLocation": [
-            "autoDetect",
-            "${workspaceFolder}"
-          ],
+          "fileLocation": ["autoDetect", "${workspaceFolder}"],
           "pattern": {
             "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
             "file": 1,
@@ -150,10 +138,7 @@
       "problemMatcher": [
         {
           "owner": "cpp",
-          "fileLocation": [
-            "autoDetect",
-            "${workspaceFolder}"
-          ],
+          "fileLocation": ["autoDetect", "${workspaceFolder}"],
           "pattern": {
             "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
             "file": 1,
@@ -191,10 +176,7 @@
       },
       "problemMatcher": {
         "owner": "cpp",
-        "fileLocation": [
-          "autoDetect",
-          "${workspaceFolder}"
-        ],
+        "fileLocation": ["autoDetect", "${workspaceFolder}"],
         "pattern": {
           "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
           "file": 1,
@@ -243,7 +225,6 @@
         "connect_to_instance",
         "-t",
         "xtensa-esp32-elf-"
-
       ],
       "windows": {
         "command": "${config:idf.pythonBinPathWin}",
