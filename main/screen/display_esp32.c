@@ -18,6 +18,7 @@
 #include "product_pins.h"
 #include <sdkconfig.h>
 
+// DEFINE!
 #define CONFIG_LILYGO_T_DISPLAY 1
 
 #if defined(CONFIG_LILYGO_T_DONGLE_S3)

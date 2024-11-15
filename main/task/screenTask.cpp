@@ -47,9 +47,9 @@ extern "C" {
   lv_disp_drv_t disp_drv;
 }
 
-#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
-#define EXAMPLE_LVGL_TASK_MIN_DELAY_MS 1
-#define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TICK_PERIOD_MS 2
+#define LVGL_TASK_MIN_DELAY_MS 1
+#define LVGL_TASK_MAX_DELAY_MS 500
 bool example_lvgl_lock(int timeout_ms);
 void example_lvgl_unlock(void);
 static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
@@ -58,7 +58,7 @@ static void example_increase_lvgl_tick(void *arg);
 TaskHandle_t screen;
 void screenTask(void *pvParam) {
   const TickType_t xBlockTime = pdMS_TO_TICKS(2000);
-  uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
+  uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
   power_driver_init();
   display_init();
@@ -92,7 +92,7 @@ void screenTask(void *pvParam) {
   esp_timer_handle_t lvgl_tick_timer = NULL;
   ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
   ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer,
-                                           EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
+                                           LVGL_TICK_PERIOD_MS * 1000));
 
   lvgl_mux = xSemaphoreCreateRecursiveMutex();
   assert(lvgl_mux);
@@ -100,7 +100,7 @@ void screenTask(void *pvParam) {
   ESP_LOGI(SCREEN_TAG, "Display LVGL");
   if (example_lvgl_lock(-1)) {
     // lv_demo_widgets();
-    lv_demo_benchmark();
+    // lv_demo_benchmark();
     // lv_demo_stress();
     // lv_demo_music();
     // Release the mutex
@@ -112,10 +112,10 @@ void screenTask(void *pvParam) {
       // Release the mutex
       example_lvgl_unlock();
     }
-    if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS) {
-      task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
-    } else if (task_delay_ms < EXAMPLE_LVGL_TASK_MIN_DELAY_MS) {
-      task_delay_ms = EXAMPLE_LVGL_TASK_MIN_DELAY_MS;
+    if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS) {
+      task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+    } else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS) {
+      task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
     }
     vTaskDelay(xBlockTime);
   }
@@ -134,7 +134,7 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
 
 static void example_increase_lvgl_tick(void *arg) {
   /* Tell LVGL how many milliseconds has elapsed */
-  lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
+  lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
 
 bool example_lvgl_lock(int timeout_ms) {
