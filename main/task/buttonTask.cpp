@@ -66,13 +66,11 @@ static void on_button(button_t *btn, button_state_t state) {
   if (state == BUTTON_RELEASED) {
     if (btn == &btn1) {
       ESP_LOGI(BUTTON_TAG, "RED RELEASED");
-      // notify_value = RED_BUTTON_RELEASED_BIT;
-      // xTaskNotify(mcp23x17, -0, eSetValueWithOverwrite);
+      xTaskNotify(screen, RED_BUTTON_RELEASED_BIT, eSetBits);
     }
     if (btn == &btn2) {
       ESP_LOGI(BUTTON_TAG, "YELL RELEASED");
-      // notify_value = YELL_BUTTON_RELEASED_BIT;
-      // xTaskNotify(hx711, 0, eSetValueWithOverwrite);
+      xTaskNotify(screen, YELL_BUTTON_RELEASED_BIT, eSetBits);
     }
   }
   // Notify screenTask

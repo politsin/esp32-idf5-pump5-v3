@@ -107,7 +107,6 @@ void screenTask(void *pvParam) {
   // Change the active screen's background color
 
   lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x003a57), LV_PART_MAIN);
-  lv_color_t bgColor = lv_obj_get_style_bg_color(lv_scr_act(), LV_PART_MAIN);
 
   // Create a white label, set its text and align it to the center*/
   lv_obj_t *label = lv_label_create(lv_scr_act());
@@ -128,14 +127,14 @@ void screenTask(void *pvParam) {
     lv_obj_set_size(fig, 30, 30);
     lv_obj_set_style_bg_color(fig, color, LV_PART_MAIN);
     lv_obj_set_style_border_color(fig, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(fig, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_width(fig, 3, LV_PART_MAIN);
     lv_obj_align(fig, LV_ALIGN_TOP_RIGHT, -btnX, y);
     return fig;
   };
 
   // Create btn figure.
   lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnY_red);
-  lv_obj_t *btnYell = createFig(lv_color_hex(0x00FF00), btnY_yell);
+  lv_obj_t *btnYell = createFig(lv_color_hex(0xAAFF00), btnY_yell);
   lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnY_blue);
 
   uint32_t notification = 0;
@@ -145,9 +144,9 @@ void screenTask(void *pvParam) {
 
     if (app_state.is_on) {
       if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) ==
-          pdTRUE) { // Block indefinitely
+          pdTRUE) { 
 
-        char labelText[128]; // Make it large enough!
+        char labelText[128];
 
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
@@ -155,17 +154,26 @@ void screenTask(void *pvParam) {
                  app_state.encoder, app_state.water_target,
                  app_state.water_current, app_state.water_delta);
 
-        // Add button event information as before...
-        // *** Update Circle Fill based on Red Button State ***
-        // lv_arc_set_value(btnYell, 50);
-        // lv_arc_set_value(btnBlue, 0);
         if (notification & YELL_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
-          strcat(labelText, "Blue Clicked\n");
+          lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000),
+                                        LV_PART_MAIN);
+          strcat(labelText, "Yellow Clicked\n");
+          vTaskDelay(pdMS_TO_TICKS(100));
         }
         if (notification & RED_BUTTON_PRESSED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Red button pressed");
           strcat(labelText, "Red Pressed\n");
+          lv_obj_set_style_border_color(btnRed, lv_color_hex(0xFF0000),
+                                        LV_PART_MAIN);
+          vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        if (notification & RED_BUTTON_RELEASED_BIT) {
+          lv_obj_set_style_border_color(btnYell, lv_color_white(),
+                                        LV_PART_MAIN);
+        }
+        if (notification & YELL_BUTTON_RELEASED_BIT) {
+          lv_obj_set_style_border_color(btnRed, lv_color_white(), LV_PART_MAIN);
         }
 
         if (notification & COUNTER_FINISHED_BIT) {
