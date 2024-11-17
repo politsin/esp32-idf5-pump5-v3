@@ -150,9 +150,10 @@ void screenTask(void *pvParam) {
 
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\n",
+                 "%ld\nTime: %ld sec\n",
                  app_state.encoder, app_state.water_target,
-                 app_state.water_current, app_state.water_delta);
+                 app_state.water_current, app_state.water_delta,
+                 app_state.time);
 
         if (notification & YELL_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
@@ -203,12 +204,12 @@ void screenTask(void *pvParam) {
 
         // Prepare and display the label text (as before)...
         char labelText[128];
-        int32_t delta = app_state.water_target - app_state.water_current;
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\n",
+                 "%ld\nTime: %ld sec\n",
                  app_state.encoder, app_state.water_target,
-                 app_state.water_current, delta);
+                 app_state.water_current, app_state.water_delta,
+                 app_state.time);
 
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);

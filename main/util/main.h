@@ -18,6 +18,7 @@ typedef struct {
 
 typedef struct {
   bool is_on;
+  int32_t time;
   int32_t encoder;
   int32_t water_target;
   int32_t water_current;

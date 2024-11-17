@@ -6,6 +6,7 @@
 typedef gpio_num_t Pintype;
 static constexpr Pintype DI = GPIO_NUM_26;
 static constexpr Pintype PUMP = GPIO_NUM_27;
+static constexpr Pintype VALVE = GPIO_NUM_25;
 #include "sdkconfig.h"
 #include <config.h>
 #include <esp_log.h>
@@ -36,6 +37,8 @@ void counterTask(void *pvParam) {
 
   gpio_pad_select_gpio(PUMP);
   gpio_set_direction(PUMP, GPIO_MODE_OUTPUT);
+  gpio_pad_select_gpio(VALVE);
+  gpio_set_direction(VALVE, GPIO_MODE_OUTPUT);
 
   // Настраиваем прерывание по нарастающему фронту
   gpio_set_intr_type(DI, GPIO_INTR_POSEDGE);
@@ -43,38 +46,46 @@ void counterTask(void *pvParam) {
   // Устанавливаем обработчик прерывания
   gpio_install_isr_service(0);
   gpio_isr_handler_add(DI, gpio_isr_handler, NULL);
-  const TickType_t xBlockTime = pdMS_TO_TICKS(250);
+  const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
   // config->get_item("steps", app_config.steps);
   config->get_item("encoder", app_config.encoder);
   ESP_LOGW(COUNTER_TAG, "Steps FROM MEM: %lu", app_config.steps);
   ESP_LOGW(COUNTER_TAG, "Enc FROM MEM: %lu", app_config.encoder);
 
+  // Variables for timing
+  TickType_t startTime = 0;
+
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
   app_state.water_target = app_config.steps;
   gpio_set_level(PUMP, 0);
+  gpio_set_level(VALVE, 0);
   while (true) {
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
       if (notification & YELL_BUTTON_CLICKED_BIT) {
-        ESP_LOGI(COUNTER_TAG, "Yellow button clicked");
+        ESP_LOGW(COUNTER_TAG, "START!! [Yellow button clicked]");
+        // Start timing
+        startTime = xTaskGetTickCount();
         rot = 0;
         isOn = true;
         gpio_set_level(PUMP, isOn);
+        gpio_set_level(VALVE, isOn);
         app_state.water_delta = 0;
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
       }
       if (notification & RED_BUTTON_PRESSED_BIT) {
-        ESP_LOGI(COUNTER_TAG, "Red button pressed");
+        ESP_LOGW(COUNTER_TAG, "STOP Emegrensy [Red button pressed]");
         rot = 0;
         isOn = false;
         gpio_set_level(PUMP, isOn);
+        gpio_set_level(VALVE, isOn);
       }
       if (notification & ENCODER_CHANGED_BIT) {
         app_state.water_target = app_config.steps + app_state.encoder;
-        app_config.encoder = app_state.encoder;
+        // app_config.encoder = app_state.encoder;
         // config->set_item("steps", app_config.encoder);
         // config->commit();
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
@@ -86,11 +97,17 @@ void counterTask(void *pvParam) {
     if (rot > app_state.water_target) {
       isOn = false;
       gpio_set_level(PUMP, isOn);
-      ESP_LOGI(COUNTER_TAG, "STOP %ld | done = %ld", app_state.water_target,
-               rot);
+      gpio_set_level(VALVE, isOn);
+
+      // Stop timing and calculate elapsed time
+      TickType_t endTime = xTaskGetTickCount();
+      app_state.time = (endTime - startTime) / 100; // Convert ticks to seconds
+      ESP_LOGW(COUNTER_TAG, "STOP %ld | done = %ld| Time: %ld seconds",
+               app_state.water_target, rot, app_state.time);
+
       isOn = false;
       app_state.is_on = isOn;
-      app_state.water_delta = app_state.water_target - rot;
+      app_state.water_delta = rot - app_state.water_target;
       // Notify screen task about counter finishing
       xTaskNotify(screen, COUNTER_FINISHED_BIT, eSetBits);
       vTaskDelay(pdMS_TO_TICKS(1000));
