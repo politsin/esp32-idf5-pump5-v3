@@ -6,35 +6,32 @@
 #include <rom/gpio.h>
 #include <stdio.h>
 
-#include <main.h>
 #include "util/config.h"
+#include <main.h>
 #define MAINTAG "MAIN"
 
 // tasks
-#include "task/tofTask.h"
-#include "task/uartTask.h"
 #include "task/blinkTask.h"
-#include "task/hx711Task.h"
 #include "task/buttonTask.h"
-#include "task/screenTask.h"
 #include "task/counterTask.h"
 #include "task/encoderTask.h"
+#include "task/hx711Task.h"
+#include "task/screenTask.h"
 #include "task/stepperTask.h"
-
-#include "util/i2c.h"
-
-app_data_t app_data = {
-    .btn_enc = 0,
-    .btn_red = 0,
-    .btn_blue = 0,
-    .encoder = 0,
-    .raw = 0,
-    .scale = 0,
-    .xp = xPortGetFreeHeapSize(),
-    .k = 278,
-};
+#include "task/tofTask.h"
+#include "task/uartTask.h"
 
 #include "i2cdev.h"
+#include "util/i2c.h"
+
+app_state_t app_state = {
+    .is_on = false,
+    .encoder = 0,
+    .water_target = 0,
+    .water_current = 0,
+    .water_delta = 0,
+    .freeHeap = 0,
+};
 
 extern "C" void app_main(void) {
   config_init();
@@ -71,7 +68,7 @@ void loop(void *pvParameter) {
     count++;
     if ((count % 100) == true) {
       size = xPortGetFreeHeapSize();
-      app_data.xp = size;
+      app_state.freeHeap = size;
       // ESP_LOGW(MAINTAG, "xP %ld", size);
       vTaskDelay(xBlockTime);
     }

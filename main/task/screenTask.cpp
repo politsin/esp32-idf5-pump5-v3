@@ -11,21 +11,22 @@ static constexpr Pintype LED = GPIO_NUM_22;
 #define SCREEN_TAG "SCREEN"
 
 // #endif
+#include "buttonTask.h"
 
 #include "util/config.h"
 
 #include "esp_spiffs.h"
 #include "fontx.h"
 #include "st7789.h"
-#include <main.h>
-#include <string.h>
-#include <sys/dirent.h>
+#include <benchmark/lv_demo_benchmark.h>
+#include <esp_timer.h>
 #include <hal/lv_hal_disp.h>
-#include <screen/tft_driver.h>
+#include <main.h>
 #include <screen/power_driver.h>
 #include <screen/product_pins.h>
-#include <esp_timer.h>
-#include <benchmark/lv_demo_benchmark.h>
+#include <screen/tft_driver.h>
+#include <string.h>
+#include <sys/dirent.h>
 // #include "hx711Task.h"
 
 // #include <TFT_eSPI.h>
@@ -43,22 +44,21 @@ static SemaphoreHandle_t lvgl_mux = NULL;
 // contains internal graphic buffer(s) called draw buffer(s)
 static lv_disp_draw_buf_t disp_buf;
 extern "C" {
-  // contains callback functions
-  lv_disp_drv_t disp_drv;
+// contains callback functions
+lv_disp_drv_t disp_drv;
 }
 
 #define LVGL_TICK_PERIOD_MS 2
-#define LVGL_TASK_MIN_DELAY_MS 1
 #define LVGL_TASK_MAX_DELAY_MS 500
-bool example_lvgl_lock(int timeout_ms);
-void example_lvgl_unlock(void);
-static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
-static void example_increase_lvgl_tick(void *arg);
+bool app_lvgl_lock(int timeout_ms);
+void app_lvgl_unlock(void);
+static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
+                              lv_color_t *color_map);
+static void app_increase_lvgl_tick(void *arg);
 
 TaskHandle_t screen;
 void screenTask(void *pvParam) {
-  const TickType_t xBlockTime = pdMS_TO_TICKS(2000);
-  uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+  const TickType_t xBlockTime = pdMS_TO_TICKS(200);
 
   power_driver_init();
   display_init();
@@ -76,7 +76,7 @@ void screenTask(void *pvParam) {
   lv_disp_drv_init(&disp_drv);
   disp_drv.hor_res = AMOLED_HEIGHT;
   disp_drv.ver_res = AMOLED_WIDTH;
-  disp_drv.flush_cb = example_lvgl_flush_cb;
+  disp_drv.flush_cb = app_lvgl_flush_cb;
   disp_drv.draw_buf = &disp_buf;
   disp_drv.full_refresh = DISPLAY_FULLRESH;
   lv_disp_drv_register(&disp_drv);
@@ -84,46 +84,107 @@ void screenTask(void *pvParam) {
   ESP_LOGI(SCREEN_TAG, "Install LVGL tick timer");
   // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
   const esp_timer_create_args_t lvgl_tick_timer_args = {
-      .callback = &example_increase_lvgl_tick,
+      .callback = &app_increase_lvgl_tick,
       .arg = NULL,
       .dispatch_method = ESP_TIMER_TASK,
       .name = "lvgl_tick",
       .skip_unhandled_events = false};
   esp_timer_handle_t lvgl_tick_timer = NULL;
   ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
-  ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer,
-                                           LVGL_TICK_PERIOD_MS * 1000));
+  esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
 
   lvgl_mux = xSemaphoreCreateRecursiveMutex();
   assert(lvgl_mux);
 
   ESP_LOGI(SCREEN_TAG, "Display LVGL");
-  if (example_lvgl_lock(-1)) {
+  if (app_lvgl_lock(-1)) {
     // lv_demo_widgets();
     // lv_demo_benchmark();
     // lv_demo_stress();
     // lv_demo_music();
     // Release the mutex
-    example_lvgl_unlock();
+    app_lvgl_unlock();
   }
+  // Change the active screen's background color
+  lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x003a57), LV_PART_MAIN);
+
+  // Create a white label, set its text and align it to the center*/
+  lv_obj_t *label = lv_label_create(lv_scr_act());
+  lv_label_set_text(label, "water");
+  lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  uint32_t notification = 0;
+  TickType_t lastUpdate = xTaskGetTickCount();
+
   while (true) {
-    if (example_lvgl_lock(-1)) {
-      task_delay_ms = lv_timer_handler();
-      // Release the mutex
-      example_lvgl_unlock();
+    if (app_state.is_on) {
+      if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) ==
+          pdTRUE) { // Block indefinitely
+
+        char labelText[128]; // Make it large enough!
+
+        snprintf(labelText, sizeof(labelText),
+                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
+                 "%ld\nHeap: %ld\n",
+                 app_state.encoder, app_state.water_target,
+                 app_state.water_current, app_state.water_delta,
+                 app_state.freeHeap);
+
+        // Add button event information as before...
+        if (notification & RED_BUTTON_PRESSED_BIT)
+          strcat(labelText, "Red Pressed\n");
+        if (notification & BLUE_BUTTON_CLICKED_BIT)
+          strcat(labelText, "Blue Clicked\n");
+        if (notification & COUNTER_FINISHED_BIT)
+          strcat(labelText, "Counter Finished\n");
+
+        if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
+          lv_label_set_text(label, labelText);
+          app_lvgl_unlock();
+        }
+
+        // vTaskDelay(pdMS_TO_TICKS(1000));
+        if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
+          // Optionally clear the events after a period (keep app_state)
+          //  lv_label_set_text(label, "");
+          app_lvgl_unlock();
+        }
+      }
+    } else {
+      if (xTaskGetTickCount() - lastUpdate >=
+          pdMS_TO_TICKS(1000)) {          // Check if 1 second has passed
+        lastUpdate = xTaskGetTickCount(); // Update the last update time
+
+        // Update app_state with current water level or whatever you need to
+        // display periodically.
+
+        // Prepare and display the label text (as before)...
+        char labelText[128];
+        int32_t delta = app_state.water_target - app_state.water_current;
+        snprintf(labelText, sizeof(labelText),
+                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
+                 "%ld\nHeap: %ld\n",
+                 app_state.encoder, app_state.water_target,
+                 app_state.water_current, delta, app_state.freeHeap);
+
+        if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
+          lv_label_set_text(label, labelText);
+          app_lvgl_unlock();
+        }
+
+      } else {
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
     }
-    if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS) {
-      task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-    } else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS) {
-      task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
-    }
-    vTaskDelay(xBlockTime);
+    lv_timer_handler(); // Handle LVGL updates
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
-
-static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
-{
+static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
+                              lv_color_t *color_map) {
   int offsetx1 = area->x1;
   int offsetx2 = area->x2;
   int offsety1 = area->y1;
@@ -132,12 +193,12 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
                       (uint16_t *)color_map);
 }
 
-static void example_increase_lvgl_tick(void *arg) {
+static void app_increase_lvgl_tick(void *arg) {
   /* Tell LVGL how many milliseconds has elapsed */
   lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
 
-bool example_lvgl_lock(int timeout_ms) {
+bool app_lvgl_lock(int timeout_ms) {
   // Convert timeout in milliseconds to FreeRTOS ticks
   // If `timeout_ms` is set to -1, the program will block until the condition is
   // met
@@ -146,4 +207,4 @@ bool example_lvgl_lock(int timeout_ms) {
   return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
-void example_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
+void app_lvgl_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }

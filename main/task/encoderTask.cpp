@@ -39,7 +39,7 @@ int32_t enc = 0;
 // mqttMessage encMessage;
 TaskHandle_t encoder;
 void encoderTask(void *pvParam) {
-  vTaskDelay(pdMS_TO_TICKS(2000));
+  vTaskDelay(pdMS_TO_TICKS(300));
   configureEncoderPins();
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
   int32_t enc_current = 0;
@@ -48,7 +48,8 @@ void encoderTask(void *pvParam) {
       enc_current = enc;
       // encMessage = {"encoder", std::to_string(enc)};
       // xQueueSend(mqttQueue, &encMessage, xBlockTime);
-      // xTaskNotify(screen, (uint32_t)enc, eSetValueWithOverwrite);
+      // Notify screen task
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, (uint32_t)enc, eSetValueWithOverwrite);
       ESP_LOGI(ENC_TAG, "encoder= %ld ticks", enc);
       vTaskDelay(pdMS_TO_TICKS(30));
@@ -56,8 +57,6 @@ void encoderTask(void *pvParam) {
     vTaskDelay(xBlockTime);
   }
 }
-
-
 
 /**
  * configure Encoder Pins.
@@ -85,12 +84,11 @@ void configureEncoderPins() {
 
 static void button_callback(void *arg) {
   // rotenc_handle_t *handle = (rotenc_handle_t *)arg;
-  ESP_LOGI(ENC_TAG, "Push button");
-  app_data.btn_enc = 1;
+  ESP_LOGI(ENC_TAG, ">>> Push button");
 }
 static void event_callback(rotenc_event_t event) {
   enc = event.position;
-  app_data.encoder = enc;
+  app_state.encoder = enc;
   // xTaskNotify(poliv, event.position, eSetValueWithOverwrite);
   // xTaskNotify(numDisplay, event.position, eSetValueWithOverwrite);
 #if CONFIG_ENCODER_DEBUG

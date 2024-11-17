@@ -1,4 +1,3 @@
-// #include <buttonTask.h> WTF o.O
 // Button #25 #33.
 #include "driver/gpio.h"
 #include "main.h"
@@ -19,6 +18,9 @@ typedef gpio_num_t Pintype;
 // esp_idf_lib_helpers.h
 // #include "mqttTask.h"
 
+#include <buttonTask.h>
+#include "screenTask.h" // Добавили заголовок для screenTask
+
 static const char *states[] = {
     [BUTTON_PRESSED] = "pressed",
     [BUTTON_RELEASED] = "released",
@@ -30,44 +32,53 @@ static button_t btn1, btn2;
 TaskHandle_t button;
 // mqttMessage eventMessage;
 static void on_button(button_t *btn, button_state_t state) {
+  uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
     if (btn == &btn1) {
-      app_data.btn_red = 3;
       ESP_LOGI(BUTTON_TAG, "RED PRESSED LONG");
+      notify_value = RED_BUTTON_LONG_PRESSED_BIT;
       // xTaskNotify(mcp23x17, -1, eSetValueWithOverwrite);
     }
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn2) {
-      app_data.btn_blue = 2;
       ESP_LOGI(BUTTON_TAG, "BLUE CLICK");
-      xTaskNotify(counter, 5000, eSetValueWithOverwrite);
+      // xTaskNotify(counter, 5000, eSetValueWithOverwrite);
+      xTaskNotify(screen, 5000, eSetValueWithOverwrite);
+      notify_value = BLUE_BUTTON_CLICKED_BIT;
       // xTaskNotify(stepper, 5000, eSetValueWithOverwrite);
     }
   }
   if (state == BUTTON_PRESSED) {
     if (btn == &btn1) {
-      app_data.btn_red = 1;
       ESP_LOGI(BUTTON_TAG, "RED PRESSED");
-      // xTaskNotify(mcp23x17, -1, eSetValueWithOverwrite);
-      xTaskNotify(counter, 5001, eSetValueWithOverwrite);
+      // xTaskNotify(counter, 5001, eSetValueWithOverwrite);
+      xTaskNotify(screen, 5001, eSetValueWithOverwrite);
+      notify_value = RED_BUTTON_PRESSED_BIT;
       // xTaskNotify(stepper, 5001, eSetValueWithOverwrite);
     }
     if (btn == &btn2) {
-      app_data.btn_blue = 1;
       ESP_LOGI(BUTTON_TAG, "BLUE PRESSED");
+      notify_value = BLUE_BUTTON_PRESSED_BIT;
       // xTaskNotify(hx711, 1, eSetValueWithOverwrite);
     }
   }
   if (state == BUTTON_RELEASED) {
     if (btn == &btn1) {
       ESP_LOGI(BUTTON_TAG, "RED RELEASED");
+      notify_value = RED_BUTTON_RELEASED_BIT;
       // xTaskNotify(mcp23x17, -0, eSetValueWithOverwrite);
     }
     if (btn == &btn2) {
       ESP_LOGI(BUTTON_TAG, "BLUE RELEASED");
+      notify_value = BLUE_BUTTON_RELEASED_BIT;
       // xTaskNotify(hx711, 0, eSetValueWithOverwrite);
     }
+  }
+  // Отправляем уведомление задаче screenTask
+  // Notify screenTask
+  if (notify_value) {
+    xTaskNotify(screen, notify_value, eSetBits);
   }
   ESP_LOGI(BUTTON_TAG, "%s button %s", btn == &btn1 ? "First" : "Second",
            states[state]);

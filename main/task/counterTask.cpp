@@ -13,6 +13,7 @@ static constexpr Pintype PUMP = GPIO_NUM_27;
 #include <rom/gpio.h>
 #define COUNTER_TAG "COUNTER"
 
+#include "task/screenTask.h"
 TaskHandle_t counter;
 
 // Объявляем счетчик как глобальную переменную
@@ -42,7 +43,7 @@ void counterTask(void *pvParam) {
   // Устанавливаем обработчик прерывания
   gpio_install_isr_service(0);
   gpio_isr_handler_add(DI, gpio_isr_handler, NULL);
-  const TickType_t xBlockTime = pdMS_TO_TICKS(80);
+  const TickType_t xBlockTime = pdMS_TO_TICKS(250);
 
   // config->get_item("steps", app_config.steps);
   config->get_item("encoder", app_config.encoder);
@@ -53,7 +54,7 @@ void counterTask(void *pvParam) {
   uint32_t i = 0;
   uint32_t notify_value;
   int32_t encoder = 0;
-  int32_t target = app_config.steps;
+  app_state.water_target = app_config.steps;
   gpio_set_level(PUMP, 0);
   while (true) {
     if (xTaskNotifyWait(0, 0, &notify_value, 0) == pdTRUE) {
@@ -63,6 +64,8 @@ void counterTask(void *pvParam) {
         rot = 0;
         isOn = true;
         gpio_set_level(PUMP, isOn);
+        app_state.water_delta = 0;
+        xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
       } else if (notify_value == 5001) {
         ESP_LOGI(COUNTER_TAG, "red btn");
         // AI OFF
@@ -71,18 +74,26 @@ void counterTask(void *pvParam) {
         gpio_set_level(PUMP, isOn);
       } else {
         encoder = (int32_t)notify_value;
-        target = app_config.steps + encoder;
+        app_state.water_target = app_config.steps + encoder;
         app_config.encoder = encoder;
         config->set_item("steps", app_config.encoder);
         config->commit();
+        xTaskNotify(screen, UPDATE_BIT, eSetBits);
         ESP_LOGW(COUNTER_TAG, "Encoder %ld", encoder);
       }
     }
-    if (rot > target) {
+    app_state.is_on = isOn;
+    app_state.water_current = rot;
+    if (rot > app_state.water_target) {
       isOn = false;
       gpio_set_level(PUMP, isOn);
-      ESP_LOGI(COUNTER_TAG, "STOP %ld | done = %ld", target, rot);
+      ESP_LOGI(COUNTER_TAG, "STOP %ld | done = %ld", app_state.water_target,
+               rot);
       isOn = false;
+      app_state.is_on = isOn;
+      app_state.water_delta = app_state.water_target - rot;
+      // Notify screen task about counter finishing
+      xTaskNotify(screen, COUNTER_FINISHED_BIT, eSetBits);
       vTaskDelay(pdMS_TO_TICKS(1000));
       rot = 0;
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -90,7 +101,7 @@ void counterTask(void *pvParam) {
     if ((i++ % 10) == true) {
       // Выводим значение счетчика
       ESP_LOGI(COUNTER_TAG, "Counter[%d]: %ld  >>  %ld", (int)isOn, rot,
-               target);
+               app_state.water_target);
     }
     vTaskDelay(xBlockTime);
   }
