@@ -106,6 +106,8 @@ void screenTask(void *pvParam) {
     app_lvgl_unlock();
   }
   // Change the active screen's background color
+  lv_color_t bgColor = lv_obj_get_style_bg_color(lv_scr_act(), LV_PART_MAIN);
+
   lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x003a57), LV_PART_MAIN);
 
   // Create a white label, set its text and align it to the center*/
@@ -114,6 +116,45 @@ void screenTask(void *pvParam) {
   lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
 
   lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  int circleX = 20;     // Margin from right edge
+  int circleY_red = 10; // Distance from the top
+  int circleY_yellow = 30;
+  int circleY_blue = 50;
+
+  // *** Create the circles (outside the loop!) ***
+  lv_obj_t *circleRed = lv_arc_create(lv_scr_act());
+  lv_obj_set_size(circleRed, 10, 10);
+  lv_arc_set_bg_angles(circleRed, 0, 360); // Full circle background
+  lv_obj_set_style_arc_color(circleRed, lv_color_hex(0xFF0000),
+                             LV_PART_MAIN);               // Red outline
+  lv_obj_set_style_arc_width(circleRed, 2, LV_PART_MAIN); // Outline width
+  lv_obj_set_style_bg_color(circleRed, bgColor,
+                            LV_PART_MAIN); // Background color
+  lv_obj_align(circleRed, LV_ALIGN_TOP_RIGHT, -circleX,
+               circleY_red);      // Align to top-right
+  lv_arc_set_value(circleRed, 0); // Initially empty
+
+  // Yellow circle (similar setup)
+  lv_obj_t *circleYellow = lv_arc_create(lv_scr_act());
+  lv_obj_set_size(circleYellow, 10, 10);
+  lv_arc_set_bg_angles(circleYellow, 0, 360);
+  lv_obj_set_style_arc_color(circleYellow, lv_color_hex(0xFFFF00),
+                             LV_PART_MAIN);
+  lv_obj_set_style_arc_width(circleYellow, 2, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(circleYellow, bgColor, LV_PART_MAIN);
+  lv_obj_align(circleYellow, LV_ALIGN_TOP_RIGHT, -circleX, circleY_yellow);
+  lv_arc_set_value(circleYellow, 0);
+
+  // Blue circle (similar setup)
+  lv_obj_t *circleBlue = lv_arc_create(lv_scr_act());
+  lv_obj_set_size(circleBlue, 10, 10);
+  lv_arc_set_bg_angles(circleBlue, 0, 360);
+  lv_obj_set_style_arc_color(circleBlue, lv_color_hex(0x0000FF), LV_PART_MAIN);
+  lv_obj_set_style_arc_width(circleBlue, 2, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(circleBlue, bgColor, LV_PART_MAIN);
+  lv_obj_align(circleBlue, LV_ALIGN_TOP_RIGHT, -circleX, circleY_blue);
+  lv_arc_set_value(circleBlue, 0);
 
   uint32_t notification = 0;
   TickType_t lastUpdate = xTaskGetTickCount();
@@ -133,6 +174,13 @@ void screenTask(void *pvParam) {
                  app_state.freeHeap);
 
         // Add button event information as before...
+        // *** Update Circle Fill based on Red Button State ***
+        if (notification & RED_BUTTON_PRESSED_BIT) {
+          lv_arc_set_value(circleRed, 100); // Fill red circle
+        }
+        if (notification & RED_BUTTON_RELEASED_BIT) {
+          lv_arc_set_value(circleRed, 0); // Empty red circle
+        }
         if (notification & RED_BUTTON_PRESSED_BIT)
           strcat(labelText, "Red Pressed\n");
         if (notification & BLUE_BUTTON_CLICKED_BIT)
