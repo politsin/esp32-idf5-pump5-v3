@@ -58,7 +58,6 @@ static void app_increase_lvgl_tick(void *arg);
 
 TaskHandle_t screen;
 void screenTask(void *pvParam) {
-  const TickType_t xBlockTime = pdMS_TO_TICKS(200);
 
   power_driver_init();
   display_init();
@@ -106,9 +105,9 @@ void screenTask(void *pvParam) {
     app_lvgl_unlock();
   }
   // Change the active screen's background color
-  lv_color_t bgColor = lv_obj_get_style_bg_color(lv_scr_act(), LV_PART_MAIN);
 
   lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x003a57), LV_PART_MAIN);
+  lv_color_t bgColor = lv_obj_get_style_bg_color(lv_scr_act(), LV_PART_MAIN);
 
   // Create a white label, set its text and align it to the center*/
   lv_obj_t *label = lv_label_create(lv_scr_act());
@@ -117,49 +116,33 @@ void screenTask(void *pvParam) {
 
   lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
 
-  int circleX = 20;     // Margin from right edge
-  int circleY_red = 10; // Distance from the top
-  int circleY_yellow = 30;
-  int circleY_blue = 50;
+  int btnX = 20; // Margin from right edge
+  // Distance from the top
+  int btnY_red = 10;
+  int btnY_yell = 50;
+  int btnY_blue = 90;
 
-  // *** Create the circles (outside the loop!) ***
-  lv_obj_t *circleRed = lv_arc_create(lv_scr_act());
-  lv_obj_set_size(circleRed, 10, 10);
-  lv_arc_set_bg_angles(circleRed, 0, 360); // Full circle background
-  lv_obj_set_style_arc_color(circleRed, lv_color_hex(0xFF0000),
-                             LV_PART_MAIN);               // Red outline
-  lv_obj_set_style_arc_width(circleRed, 2, LV_PART_MAIN); // Outline width
-  lv_obj_set_style_bg_color(circleRed, bgColor,
-                            LV_PART_MAIN); // Background color
-  lv_obj_align(circleRed, LV_ALIGN_TOP_RIGHT, -circleX,
-               circleY_red);      // Align to top-right
-  lv_arc_set_value(circleRed, 0); // Initially empty
+  // Function to create a rectangle with specified color and position
+  auto createFig = [&](lv_color_t color, int y) -> lv_obj_t * {
+    lv_obj_t *fig = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(fig, 30, 30);
+    lv_obj_set_style_bg_color(fig, color, LV_PART_MAIN);
+    lv_obj_set_style_border_color(fig, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(fig, 1, LV_PART_MAIN);
+    lv_obj_align(fig, LV_ALIGN_TOP_RIGHT, -btnX, y);
+    return fig;
+  };
 
-  // Yellow circle (similar setup)
-  lv_obj_t *circleYellow = lv_arc_create(lv_scr_act());
-  lv_obj_set_size(circleYellow, 10, 10);
-  lv_arc_set_bg_angles(circleYellow, 0, 360);
-  lv_obj_set_style_arc_color(circleYellow, lv_color_hex(0xFFFF00),
-                             LV_PART_MAIN);
-  lv_obj_set_style_arc_width(circleYellow, 2, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(circleYellow, bgColor, LV_PART_MAIN);
-  lv_obj_align(circleYellow, LV_ALIGN_TOP_RIGHT, -circleX, circleY_yellow);
-  lv_arc_set_value(circleYellow, 0);
-
-  // Blue circle (similar setup)
-  lv_obj_t *circleBlue = lv_arc_create(lv_scr_act());
-  lv_obj_set_size(circleBlue, 10, 10);
-  lv_arc_set_bg_angles(circleBlue, 0, 360);
-  lv_obj_set_style_arc_color(circleBlue, lv_color_hex(0x0000FF), LV_PART_MAIN);
-  lv_obj_set_style_arc_width(circleBlue, 2, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(circleBlue, bgColor, LV_PART_MAIN);
-  lv_obj_align(circleBlue, LV_ALIGN_TOP_RIGHT, -circleX, circleY_blue);
-  lv_arc_set_value(circleBlue, 0);
+  // Create btn figure.
+  lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnY_red);
+  lv_obj_t *btnYell = createFig(lv_color_hex(0x00FF00), btnY_yell);
+  lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnY_blue);
 
   uint32_t notification = 0;
   TickType_t lastUpdate = xTaskGetTickCount();
 
   while (true) {
+
     if (app_state.is_on) {
       if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) ==
           pdTRUE) { // Block indefinitely
@@ -168,25 +151,27 @@ void screenTask(void *pvParam) {
 
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nHeap: %ld\n",
+                 "%ld\n",
                  app_state.encoder, app_state.water_target,
-                 app_state.water_current, app_state.water_delta,
-                 app_state.freeHeap);
+                 app_state.water_current, app_state.water_delta);
 
         // Add button event information as before...
         // *** Update Circle Fill based on Red Button State ***
-        if (notification & RED_BUTTON_PRESSED_BIT) {
-          lv_arc_set_value(circleRed, 100); // Fill red circle
-        }
-        if (notification & RED_BUTTON_RELEASED_BIT) {
-          lv_arc_set_value(circleRed, 0); // Empty red circle
-        }
-        if (notification & RED_BUTTON_PRESSED_BIT)
-          strcat(labelText, "Red Pressed\n");
-        if (notification & BLUE_BUTTON_CLICKED_BIT)
+        // lv_arc_set_value(btnYell, 50);
+        // lv_arc_set_value(btnBlue, 0);
+        if (notification & YELL_BUTTON_CLICKED_BIT) {
+          ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
           strcat(labelText, "Blue Clicked\n");
-        if (notification & COUNTER_FINISHED_BIT)
+        }
+        if (notification & RED_BUTTON_PRESSED_BIT) {
+          ESP_LOGI(SCREEN_TAG, "Red button pressed");
+          strcat(labelText, "Red Pressed\n");
+        }
+
+        if (notification & COUNTER_FINISHED_BIT) {
+          ESP_LOGI(SCREEN_TAG, "Counter Finished");
           strcat(labelText, "Counter Finished\n");
+        }
 
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
@@ -213,9 +198,9 @@ void screenTask(void *pvParam) {
         int32_t delta = app_state.water_target - app_state.water_current;
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nHeap: %ld\n",
+                 "%ld\n",
                  app_state.encoder, app_state.water_target,
-                 app_state.water_current, delta, app_state.freeHeap);
+                 app_state.water_current, delta);
 
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);

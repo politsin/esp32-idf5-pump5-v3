@@ -52,34 +52,33 @@ void counterTask(void *pvParam) {
 
   bool isOn = false;
   uint32_t i = 0;
-  uint32_t notify_value;
-  int32_t encoder = 0;
+  uint32_t notification;
   app_state.water_target = app_config.steps;
   gpio_set_level(PUMP, 0);
   while (true) {
-    if (xTaskNotifyWait(0, 0, &notify_value, 0) == pdTRUE) {
-      if (notify_value == 5000) {
-        ESP_LOGI(COUNTER_TAG, "blue btn");
-        // AI ON
+    if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
+        pdTRUE) { // Wait for any notification
+      if (notification & YELL_BUTTON_CLICKED_BIT) {
+        ESP_LOGI(COUNTER_TAG, "Yellow button clicked");
         rot = 0;
         isOn = true;
         gpio_set_level(PUMP, isOn);
         app_state.water_delta = 0;
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
-      } else if (notify_value == 5001) {
-        ESP_LOGI(COUNTER_TAG, "red btn");
-        // AI OFF
+      }
+      if (notification & RED_BUTTON_PRESSED_BIT) {
+        ESP_LOGI(COUNTER_TAG, "Red button pressed");
         rot = 0;
         isOn = false;
         gpio_set_level(PUMP, isOn);
-      } else {
-        encoder = (int32_t)notify_value;
-        app_state.water_target = app_config.steps + encoder;
-        app_config.encoder = encoder;
-        config->set_item("steps", app_config.encoder);
-        config->commit();
+      }
+      if (notification & ENCODER_CHANGED_BIT) {
+        app_state.water_target = app_config.steps + app_state.encoder;
+        app_config.encoder = app_state.encoder;
+        // config->set_item("steps", app_config.encoder);
+        // config->commit();
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
-        ESP_LOGW(COUNTER_TAG, "Encoder %ld", encoder);
+        ESP_LOGW(COUNTER_TAG, "Encoder changed: %ld", app_state.encoder);
       }
     }
     app_state.is_on = isOn;
@@ -98,7 +97,8 @@ void counterTask(void *pvParam) {
       rot = 0;
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    if ((i++ % 10) == true) {
+    if ((i++ % 30) == true) {
+      // xTaskNotify(screen, UPDATE_BIT, eSetBits);
       // Выводим значение счетчика
       ESP_LOGI(COUNTER_TAG, "Counter[%d]: %ld  >>  %ld", (int)isOn, rot,
                app_state.water_target);

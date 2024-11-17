@@ -18,8 +18,8 @@ typedef gpio_num_t Pintype;
 // esp_idf_lib_helpers.h
 // #include "mqttTask.h"
 
-#include <buttonTask.h>
 #include "screenTask.h" // Добавили заголовок для screenTask
+#include <buttonTask.h>
 
 static const char *states[] = {
     [BUTTON_PRESSED] = "pressed",
@@ -35,61 +35,62 @@ static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
     if (btn == &btn1) {
-      ESP_LOGI(BUTTON_TAG, "RED PRESSED LONG");
-      notify_value = RED_BUTTON_LONG_PRESSED_BIT;
-      // xTaskNotify(mcp23x17, -1, eSetValueWithOverwrite);
+      ESP_LOGW(BUTTON_TAG, "RED PRESSED LONG");
+    }
+    if (btn == &btn2) {
+      ESP_LOGW(BUTTON_TAG, "YELL PRESSED LONG");
     }
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "BLUE CLICK");
-      // xTaskNotify(counter, 5000, eSetValueWithOverwrite);
-      xTaskNotify(screen, 5000, eSetValueWithOverwrite);
-      notify_value = BLUE_BUTTON_CLICKED_BIT;
+      ESP_LOGI(BUTTON_TAG, "YELL CLICK");
+      xTaskNotify(screen, YELL_BUTTON_CLICKED_BIT, eSetBits);
+      xTaskNotify(counter, YELL_BUTTON_CLICKED_BIT, eSetBits);
       // xTaskNotify(stepper, 5000, eSetValueWithOverwrite);
     }
   }
   if (state == BUTTON_PRESSED) {
     if (btn == &btn1) {
       ESP_LOGI(BUTTON_TAG, "RED PRESSED");
-      // xTaskNotify(counter, 5001, eSetValueWithOverwrite);
-      xTaskNotify(screen, 5001, eSetValueWithOverwrite);
-      notify_value = RED_BUTTON_PRESSED_BIT;
+      xTaskNotify(screen, RED_BUTTON_PRESSED_BIT, eSetBits);
+      xTaskNotify(counter, RED_BUTTON_PRESSED_BIT, eSetBits);
+      // notify_value = RED_BUTTON_PRESSED_BIT;
       // xTaskNotify(stepper, 5001, eSetValueWithOverwrite);
     }
     if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "BLUE PRESSED");
-      notify_value = BLUE_BUTTON_PRESSED_BIT;
+      ESP_LOGI(BUTTON_TAG, "YELL PRESSED");
+      // notify_value = YELL_BUTTON_PRESSED_BIT;
       // xTaskNotify(hx711, 1, eSetValueWithOverwrite);
     }
   }
   if (state == BUTTON_RELEASED) {
     if (btn == &btn1) {
       ESP_LOGI(BUTTON_TAG, "RED RELEASED");
-      notify_value = RED_BUTTON_RELEASED_BIT;
+      // notify_value = RED_BUTTON_RELEASED_BIT;
       // xTaskNotify(mcp23x17, -0, eSetValueWithOverwrite);
     }
     if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "BLUE RELEASED");
-      notify_value = BLUE_BUTTON_RELEASED_BIT;
+      ESP_LOGI(BUTTON_TAG, "YELL RELEASED");
+      // notify_value = YELL_BUTTON_RELEASED_BIT;
       // xTaskNotify(hx711, 0, eSetValueWithOverwrite);
     }
   }
-  // Отправляем уведомление задаче screenTask
   // Notify screenTask
-  if (notify_value) {
+  if (notify_value && false) {
+  // Отправляем уведомление задаче screenTask
     xTaskNotify(screen, notify_value, eSetBits);
+    ESP_LOGI(BUTTON_TAG, "%s button %s", btn == &btn1 ? "First" : "Second",
+             states[state]);
   }
-  ESP_LOGI(BUTTON_TAG, "%s button %s", btn == &btn1 ? "First" : "Second",
-           states[state]);
 }
+
 void buttonTask(void *pvParam) {
   // First button connected between GPIO and GND
   // pressed logic level 0, no autorepeat
   btn1.gpio = BUTTON_PIN1;
   btn1.pressed_level = 0;
   btn1.internal_pull = true;
-  btn1.autorepeat = false;
+  btn1.autorepeat = true;
   btn1.callback = on_button;
 
   // Second button connected between GPIO and +3.3V
@@ -97,7 +98,7 @@ void buttonTask(void *pvParam) {
   btn2.gpio = BUTTON_PIN2;
   btn2.pressed_level = 0;
   btn2.internal_pull = true;
-  btn2.autorepeat = true;
+  btn2.autorepeat = false;
   btn2.callback = on_button;
 
   ESP_ERROR_CHECK(button_init(&btn1));

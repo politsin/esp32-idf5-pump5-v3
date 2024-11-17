@@ -39,6 +39,7 @@ extern "C" void app_main(void) {
   esp_log_level_set("gpio", ESP_LOG_WARN);
   esp_log_level_set("DendoStepper", ESP_LOG_WARN);
   esp_log_level_set("BUTTON", ESP_LOG_WARN);
+  esp_log_level_set("COUNTER", ESP_LOG_WARN);
   // esp_log_level_set("ENCODER", ESP_LOG_WARN);
   ESP_LOGW(MAINTAG, "Hello world!!");
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
