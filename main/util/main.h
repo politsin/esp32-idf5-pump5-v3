@@ -33,11 +33,12 @@ typedef enum {
   COUNTER_FINISHED_BIT = (1 << 2),
   RED_BUTTON_PRESSED_BIT = (1 << 3),
   RED_BUTTON_RELEASED_BIT = (1 << 5),
-  RED_BUTTON_LONG_PRESSED_BIT = (1 << 5),
+  YELL_BUTTON_LONG_PRESSED_BIT = (1 << 5),
   YELL_BUTTON_PRESSED_BIT = (1 << 6),
   YELL_BUTTON_RELEASED_BIT = (1 << 7),
   YELL_BUTTON_CLICKED_BIT = (1 << 8),
   ENCODER_CHANGED_BIT = (1 << 9),
+  ENCODER_BTN_BIT = (1 << 10),
 } screen_notification_t;
 
 #endif /* APP_MAIN_H_ */

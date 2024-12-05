@@ -3,8 +3,8 @@
 #include "main.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-static const Pintype BUTTON_PIN1 = GPIO_NUM_38;
-static const Pintype BUTTON_PIN2 = GPIO_NUM_37;
+static const Pintype BUTTON_PIN1 = GPIO_NUM_0;
+static const Pintype BUTTON_PIN2 = GPIO_NUM_35;
 
 #include <button.h>
 #include <esp_log.h>
@@ -38,6 +38,7 @@ static void on_button(button_t *btn, button_state_t state) {
       ESP_LOGW(BUTTON_TAG, "RED PRESSED LONG");
     }
     if (btn == &btn2) {
+      xTaskNotify(counter, YELL_BUTTON_LONG_PRESSED_BIT, eSetBits);
       ESP_LOGW(BUTTON_TAG, "YELL PRESSED LONG");
     }
   }

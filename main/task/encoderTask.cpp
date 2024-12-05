@@ -26,8 +26,8 @@ using std::string;
 
 // ENCODER.
 static const gpio_num_t encoderS1 = GPIO_NUM_15;
-static const gpio_num_t encoderS2 = GPIO_NUM_17;
-static const gpio_num_t encoderBtn = GPIO_NUM_39;
+static const gpio_num_t encoderS2 = GPIO_NUM_13;
+static const gpio_num_t encoderBtn = GPIO_NUM_38;
 static const uint32_t debouncsEnc = 100;
 static const uint32_t debouncsBtn = 100;
 rotenc_handle_t handle = {};
@@ -50,7 +50,7 @@ void encoderTask(void *pvParam) {
       // xQueueSend(mqttQueue, &encMessage, xBlockTime);
       // Notify screen task
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-      xTaskNotify(counter, (uint32_t)enc, eSetValueWithOverwrite);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
       ESP_LOGI(ENC_TAG, "encoder= %ld ticks", enc);
       vTaskDelay(pdMS_TO_TICKS(30));
     }
@@ -84,7 +84,8 @@ void configureEncoderPins() {
 
 static void button_callback(void *arg) {
   // rotenc_handle_t *handle = (rotenc_handle_t *)arg;
-  ESP_LOGI(ENC_TAG, ">>> Push button");
+  // ESP_LOGE(ENC_TAG, "Push button >> ENC");
+  // xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
 }
 static void event_callback(rotenc_event_t event) {
   enc = event.position;

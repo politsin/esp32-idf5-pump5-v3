@@ -49,7 +49,7 @@ lv_disp_drv_t disp_drv;
 }
 
 #define LVGL_TICK_PERIOD_MS 2
-#define LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TASK_MAX_DELAY_MS 200
 bool app_lvgl_lock(int timeout_ms);
 void app_lvgl_unlock(void);
 static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
