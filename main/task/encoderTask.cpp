@@ -25,9 +25,9 @@ using std::string;
 #include <driver/gpio.h>
 
 // ENCODER.
-static const gpio_num_t encoderS1 = GPIO_NUM_15;
-static const gpio_num_t encoderS2 = GPIO_NUM_13;
-static const gpio_num_t encoderBtn = GPIO_NUM_38;
+static const gpio_num_t encoderS1 = GPIO_NUM_32;
+static const gpio_num_t encoderS2 = GPIO_NUM_33;
+static const gpio_num_t encoderBtn = GPIO_NUM_39;
 static const uint32_t debouncsEnc = 100;
 static const uint32_t debouncsBtn = 100;
 rotenc_handle_t handle = {};

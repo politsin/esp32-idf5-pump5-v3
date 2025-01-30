@@ -107,7 +107,10 @@ void display_init() {
 #if defined(CONFIG_LILYGO_T_DISPLAY)
   ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
   esp_lcd_panel_swap_xy(panel_handle, true);
-  ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, true));
+  ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
+  // ESP_ERROR_CHECK(esp_lcd_panel_set_rotation(
+  //     panel_handle, 2)); // 0 - 0°, 1 - 90°, 2 - 180°, 3 - 270°
+
   esp_lcd_panel_set_gap(panel_handle, 40, 53);
 #elif defined(CONFIG_LILYGO_T_DONGLE_S2)
   ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));

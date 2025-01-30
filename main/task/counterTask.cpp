@@ -4,14 +4,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
-static constexpr Pintype DI = GPIO_NUM_39;
-static constexpr Pintype PUMP = GPIO_NUM_26;
-static constexpr Pintype VALVE1 = GPIO_NUM_25;
-static constexpr Pintype VALVE2 = GPIO_NUM_33;
-static constexpr Pintype VALVE3 = GPIO_NUM_32;
-static constexpr Pintype VALVE4 = GPIO_NUM_17;
-static constexpr Pintype VALVE5 = GPIO_NUM_22;
-static constexpr Pintype VALVE6 = GPIO_NUM_21;
+static constexpr Pintype DI = GPIO_NUM_13;
+static constexpr Pintype PUMP = GPIO_NUM_25;
+static constexpr Pintype VALVE1 = GPIO_NUM_17;
+static constexpr Pintype VALVE2 = GPIO_NUM_21;
+static constexpr Pintype VALVE3 = GPIO_NUM_22;
+static constexpr Pintype VALVE4 = GPIO_NUM_26;
+static constexpr Pintype VALVE5 = GPIO_NUM_27;
 #include "sdkconfig.h"
 #include <config.h>
 #include <esp_log.h>
@@ -62,7 +61,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
 }
 
 app_config_t app_config = {
-    .steps = 400,
+    .steps = 1050,
     .encoder = 0,
 };
 
