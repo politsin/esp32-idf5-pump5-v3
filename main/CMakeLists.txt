@@ -18,9 +18,22 @@ idf_component_register(
     # util
     "util/config.cpp"
     "util/nvsInit.cpp"
+    "util/wifi_manager.cpp"
+    "util/telegram_manager.cpp"
     # "util/i2c.cpp"
   INCLUDE_DIRS 
     "."
     "util"
     "task"
+  REQUIRES
+    json
+    esp_http_client
+    driver
+    nvs_flash
+    esp_wifi
+    esp_https_ota
+    esp_lcd
+    button
+    i2cdev
+    esp32-c3-rotary-encoder
 )

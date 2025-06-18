@@ -7,6 +7,8 @@
 #include <stdio.h>
 
 #include "util/config.h"
+#include "util/wifi_manager.h"
+#include "util/telegram_manager.h"
 #include <main.h>
 #define MAINTAG "MAIN"
 
@@ -15,9 +17,7 @@
 #include "task/buttonTask.h"
 #include "task/counterTask.h"
 #include "task/encoderTask.h"
-#include "task/hx711Task.h"
 #include "task/screenTask.h"
-#include "task/stepperTask.h"
 #include "task/uartTask.h"
 
 #include "i2cdev.h"
@@ -45,6 +45,12 @@ extern "C" void app_main(void) {
   esp_log_level_set("ENCODER", ESP_LOG_WARN);
   ESP_LOGW(MAINTAG, "Hello world!!");
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
+
+  // Инициализация WiFi
+  ESP_ERROR_CHECK(wifi_init());
+
+  // Инициализация Telegram менеджера
+  ESP_ERROR_CHECK(telegram_init());
 
   // tasks.
   // i2c_init(true);

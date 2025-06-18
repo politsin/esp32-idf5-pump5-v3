@@ -12,7 +12,6 @@
 using std::string;
 
 //.
-#include "stepperTask.h"
 #include "counterTask.h"
 #include "screenTask.h"
 

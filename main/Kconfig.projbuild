@@ -34,3 +34,12 @@ menu "Example Configuration"
             Define the blinking period in milliseconds.
 
 endmenu
+
+menu "SPIFFS Configuration"
+    config SPIFFS_MAX_PARTITIONS
+        int "Maximum Number of Partitions"
+        default 3
+        range 1 10
+        help
+            Define maximum number of partitions that can be mounted.
+endmenu

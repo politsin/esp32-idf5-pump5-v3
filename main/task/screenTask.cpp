@@ -15,9 +15,6 @@ typedef gpio_num_t Pintype;
 
 #include "util/config.h"
 
-#include "esp_spiffs.h"
-#include "fontx.h"
-#include "st7789.h"
 #include <benchmark/lv_demo_benchmark.h>
 #include <esp_timer.h>
 #include <hal/lv_hal_disp.h>
