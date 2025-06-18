@@ -1,5 +1,7 @@
 # Esp32 Pump
 
+<https://github.com/GillesOdb/ttgo-tdisplay-kicad>
+
 - 0 outputs PWM signal at boot, must be LOW to enter flashing mode
   - Input - pulled up
   - Output - OK
@@ -59,8 +61,8 @@ static const gpio_num_t encoderBtn = GPIO_NUM_39;
 #define TFT_MOSI_GPIO 19
 #define TFT_RESET_GPIO 23
 // i2c Arduino IDE
-#define I2C_SDA GPIO_NUM_21
-#define I2C_SCL GPIO_NUM_22
+//#define I2C_SDA GPIO_NUM_21
+// #define I2C_SCL GPIO_NUM_22
 // General 4-PIN
 static const gpio_num_t encoderS1 = GPIO_NUM_25;
 static const gpio_num_t encoderS2 = GPIO_NUM_26;

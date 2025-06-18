@@ -7,8 +7,8 @@ typedef gpio_num_t Pintype;
 static constexpr Pintype DI = GPIO_NUM_13;
 static constexpr Pintype PUMP = GPIO_NUM_25;
 static constexpr Pintype VALVE1 = GPIO_NUM_17;
-static constexpr Pintype VALVE2 = GPIO_NUM_21;
-static constexpr Pintype VALVE3 = GPIO_NUM_22;
+static constexpr Pintype VALVE2 = GPIO_NUM_22;
+static constexpr Pintype VALVE3 = GPIO_NUM_21;
 static constexpr Pintype VALVE4 = GPIO_NUM_26;
 static constexpr Pintype VALVE5 = GPIO_NUM_27;
 #include "sdkconfig.h"
@@ -40,22 +40,34 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
     int32_t target = app_state.water_target;
     if (rot < target) {
       gpio_set_level(VALVE1, 1);
+      app_state.valve = 1;
     } else if (rot > target && rot < target * 2) {
       gpio_set_level(VALVE1, 0);
       gpio_set_level(VALVE2, 1);
+      app_state.valve = 2;
     } else if (rot > target * 2 && rot < target * 3) {
       gpio_set_level(VALVE2, 0);
       gpio_set_level(VALVE3, 1);
+      app_state.valve = 3;
     } else if (rot > target * 3 && rot < target * 4) {
       gpio_set_level(VALVE3, 0);
       gpio_set_level(VALVE4, 1);
+      app_state.valve = 4;
     } else if (rot > target * 3 && rot < target * 5) {
       gpio_set_level(VALVE4, 0);
       gpio_set_level(VALVE5, 1);
+      app_state.valve = 5;
     } else if (rot > target * 5) {
-      gpio_set_level(VALVE5, 0);
-      gpio_set_level(PUMP, 0);
-      pumpOn = false;
+      if (app_state.rock) {
+        rot = 0;
+        gpio_set_level(VALVE5, 0);
+        gpio_set_level(VALVE1, 1);
+      } else {
+        gpio_set_level(VALVE5, 0);
+        gpio_set_level(PUMP, 0);
+        app_state.valve = 0;
+        pumpOn = false;
+      }
     }
   }
 }
@@ -109,10 +121,19 @@ void counterTask(void *pvParam) {
   uint32_t notification;
   app_state.water_target = app_config.steps;
 
+  gpio_config_t di_config = {
+      .pin_bit_mask = (1ULL << DI),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_ENABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_ANYEDGE
+  };
+  gpio_config(&di_config);
+
   while (true) {
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
-      if (notification & YELL_BUTTON_LONG_PRESSED_BIT) {
+      if (notification & BTN_FLUSH_BIT) {
         gpio_set_level(PUMP, 1);
         gpio_set_level(VALVE1, 1);
         gpio_set_level(VALVE2, 1);
@@ -121,8 +142,21 @@ void counterTask(void *pvParam) {
         gpio_set_level(VALVE5, 1);
         ESP_LOGW(COUNTER_TAG, "Flush!");
       }
-      if (notification & YELL_BUTTON_CLICKED_BIT) {
-        ESP_LOGW(COUNTER_TAG, "START!! [Yellow button clicked]");
+      if (notification & BTN_RUN_BIT) {
+        app_state.rock = true;
+        ESP_LOGW(COUNTER_TAG, "Run!");
+        rot = 0;
+        isOn = true;
+        pumpOn = true;
+        gpio_set_level(PUMP, isOn);
+        app_state.water_delta = 0;
+        xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        gpio_set_level(VALVE1, isOn);
+        app_state.valve = 1;
+      }
+      if (notification & BTN_FLUSH_BIT) {
+        ESP_LOGW(COUNTER_TAG, "START!! Flush");
         // Start timing
         startTime = xTaskGetTickCount();
         rot = 0;
@@ -133,9 +167,11 @@ void counterTask(void *pvParam) {
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(VALVE1, isOn);
+        app_state.valve = 1;
       }
-      if (notification & RED_BUTTON_PRESSED_BIT) {
-        ESP_LOGW(COUNTER_TAG, "STOP Emegrensy [Red button pressed]");
+      if (notification & BTN_STOP_BIT) {
+        ESP_LOGW(COUNTER_TAG, "STOP Emegrensy!");
+        app_state.rock = false;
         rot = 0;
         isOn = false;
         pumpOn = false;
@@ -144,6 +180,7 @@ void counterTask(void *pvParam) {
         gpio_set_level(VALVE3, 0);
         gpio_set_level(VALVE4, 0);
         gpio_set_level(VALVE5, 0);
+        app_state.valve = 0;
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(PUMP, 0);
       }
@@ -158,7 +195,7 @@ void counterTask(void *pvParam) {
     }
     app_state.is_on = isOn;
     app_state.water_current = rot;
-    if (rot > app_state.water_target * 5) {
+    if (!app_state.rock && rot > app_state.water_target * 5) {
       isOn = false;
       gpio_set_level(PUMP, isOn);
 

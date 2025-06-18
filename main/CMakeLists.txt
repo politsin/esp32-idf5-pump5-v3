@@ -8,8 +8,8 @@ idf_component_register(
     "task/screenTask.cpp"
     "task/encoderTask.cpp"
     "task/counterTask.cpp"
-    "task/stepperTask.cpp"
-    "task/tofTask.cpp"
+    # "task/stepperTask.cpp"
+    # "task/tofTask.cpp"
     # screen
     "screen/display_esp32.c"
     "screen/initSequence.c"
@@ -18,7 +18,7 @@ idf_component_register(
     # util
     "util/config.cpp"
     "util/nvsInit.cpp"
-    "util/i2c.cpp"
+    # "util/i2c.cpp"
   INCLUDE_DIRS 
     "."
     "util"

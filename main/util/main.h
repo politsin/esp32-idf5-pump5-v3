@@ -18,12 +18,14 @@ typedef struct {
 
 typedef struct {
   bool is_on;
+  bool rock;
   int32_t time;
   int32_t encoder;
   int32_t water_target;
   int32_t water_current;
   int32_t water_delta;
   int32_t freeHeap;
+  int8_t valve;
 } app_state_t;
 
 // Bitmask for screen notifications.  Note: this is an enum, not a struct.
@@ -31,14 +33,17 @@ typedef enum {
   UPDATE_BIT = (1 << 0),
   COUNTER_START_BIT = (1 << 1),
   COUNTER_FINISHED_BIT = (1 << 2),
-  RED_BUTTON_PRESSED_BIT = (1 << 3),
-  RED_BUTTON_RELEASED_BIT = (1 << 5),
-  YELL_BUTTON_LONG_PRESSED_BIT = (1 << 5),
-  YELL_BUTTON_PRESSED_BIT = (1 << 6),
-  YELL_BUTTON_RELEASED_BIT = (1 << 7),
-  YELL_BUTTON_CLICKED_BIT = (1 << 8),
-  ENCODER_CHANGED_BIT = (1 << 9),
-  ENCODER_BTN_BIT = (1 << 10),
+  BTN1_BUTTON_CLICKED_BIT = (1 << 3),
+  BTN1_BUTTON_PRESSED_BIT = (1 << 4),
+  BTN1_BUTTON_RELEASED_BIT = (1 << 5),
+  BTN2_BUTTON_CLICKED_BIT = (1 << 6),
+  BTN2_BUTTON_PRESSED_BIT = (1 << 7),
+  BTN2_BUTTON_RELEASED_BIT = (1 << 8),
+  BTN_STOP_BIT = (1 << 9),
+  BTN_FLUSH_BIT = (1 << 10),
+  BTN_RUN_BIT = (1 << 11),
+  ENCODER_CHANGED_BIT = (1 << 12),
+  ENCODER_BTN_BIT = (1 << 13),
 } screen_notification_t;
 
 #endif /* APP_MAIN_H_ */

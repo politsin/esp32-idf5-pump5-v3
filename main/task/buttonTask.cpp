@@ -3,8 +3,11 @@
 #include "main.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-static const Pintype BUTTON_PIN1 = GPIO_NUM_0;
-static const Pintype BUTTON_PIN2 = GPIO_NUM_35;
+static const Pintype BUTTON_PIN1 = GPIO_NUM_0;   // bottom
+static const Pintype BUTTON_PIN2 = GPIO_NUM_35;  // top
+static const Pintype BUTTON_STOP = GPIO_NUM_36;  // STOP
+static const Pintype BUTTON_FLUSH = GPIO_NUM_37; // FLUSH
+static const Pintype BUTTON_RUN = GPIO_NUM_38;   // RUN
 
 #include <button.h>
 #include <esp_log.h>
@@ -28,55 +31,50 @@ static const char *states[] = {
     [BUTTON_PRESSED_LONG] = "pressed long",
 };
 
-static button_t btn1, btn2;
+static button_t btn1, btn2, btn_stop, btn_flush, btn_run;
 TaskHandle_t button;
 // mqttMessage eventMessage;
 static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    if (btn == &btn1) {
+    if (btn == &btn1 || btn == &btn_stop) {
       ESP_LOGW(BUTTON_TAG, "RED PRESSED LONG");
-    }
-    if (btn == &btn2) {
-      xTaskNotify(counter, YELL_BUTTON_LONG_PRESSED_BIT, eSetBits);
-      ESP_LOGW(BUTTON_TAG, "YELL PRESSED LONG");
     }
   }
   if (state == BUTTON_CLICKED) {
+    if (btn == &btn_stop) {
+      ESP_LOGI(BUTTON_TAG, "STOP CLICK");
+      xTaskNotify(screen, BTN_STOP_BIT, eSetBits);
+      xTaskNotify(counter, BTN_STOP_BIT, eSetBits);
+    }
+    if (btn == &btn_flush) {
+      ESP_LOGI(BUTTON_TAG, "FLUSH CLICK");
+      xTaskNotify(screen, BTN_FLUSH_BIT, eSetBits);
+      xTaskNotify(counter, BTN_FLUSH_BIT, eSetBits);
+    }
+    if (btn == &btn_run) {
+      ESP_LOGI(BUTTON_TAG, "RUN CLICK");
+      xTaskNotify(screen, BTN_RUN_BIT, eSetBits);
+      xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
+    }
+    if (btn == &btn1) {
+      ESP_LOGI(BUTTON_TAG, "Btn1 CLICK");
+      xTaskNotify(screen, BTN1_BUTTON_CLICKED_BIT, eSetBits);
+      xTaskNotify(counter, BTN1_BUTTON_CLICKED_BIT, eSetBits);
+    }
     if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "YELL CLICK");
-      xTaskNotify(screen, YELL_BUTTON_CLICKED_BIT, eSetBits);
-      xTaskNotify(counter, YELL_BUTTON_CLICKED_BIT, eSetBits);
-      // xTaskNotify(stepper, 5000, eSetValueWithOverwrite);
+      ESP_LOGI(BUTTON_TAG, "Btn2 CLICK");
+      xTaskNotify(screen, BTN2_BUTTON_CLICKED_BIT, eSetBits);
+      xTaskNotify(counter, BTN2_BUTTON_CLICKED_BIT, eSetBits);
     }
   }
   if (state == BUTTON_PRESSED) {
-    if (btn == &btn1) {
-      ESP_LOGI(BUTTON_TAG, "RED PRESSED");
-      xTaskNotify(screen, RED_BUTTON_PRESSED_BIT, eSetBits);
-      xTaskNotify(counter, RED_BUTTON_PRESSED_BIT, eSetBits);
-      // notify_value = RED_BUTTON_PRESSED_BIT;
-      // xTaskNotify(stepper, 5001, eSetValueWithOverwrite);
-    }
-    if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "YELL PRESSED");
-      // notify_value = YELL_BUTTON_PRESSED_BIT;
-      // xTaskNotify(hx711, 1, eSetValueWithOverwrite);
-    }
   }
   if (state == BUTTON_RELEASED) {
-    if (btn == &btn1) {
-      ESP_LOGI(BUTTON_TAG, "RED RELEASED");
-      xTaskNotify(screen, RED_BUTTON_RELEASED_BIT, eSetBits);
-    }
-    if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "YELL RELEASED");
-      xTaskNotify(screen, YELL_BUTTON_RELEASED_BIT, eSetBits);
-    }
   }
   // Notify screenTask
   if (notify_value && false) {
-  // Отправляем уведомление задаче screenTask
+    // Отправляем уведомление задаче screenTask
     xTaskNotify(screen, notify_value, eSetBits);
     ESP_LOGI(BUTTON_TAG, "%s button %s", btn == &btn1 ? "First" : "Second",
              states[state]);
@@ -100,11 +98,37 @@ void buttonTask(void *pvParam) {
   btn2.autorepeat = false;
   btn2.callback = on_button;
 
+  // STOP button
+  btn_stop.gpio = BUTTON_STOP;
+  btn_stop.pressed_level = 0;
+  btn_stop.internal_pull = true;
+  btn_stop.autorepeat = true;
+  btn_stop.callback = on_button;
+
+  // FLUSH button
+  btn_flush.gpio = BUTTON_FLUSH;
+  btn_flush.pressed_level = 0;
+  btn_flush.internal_pull = true;
+  btn_flush.autorepeat = false;
+  btn_flush.callback = on_button;
+
+  // RUN button
+  btn_run.gpio = BUTTON_RUN;
+  btn_run.pressed_level = 0;
+  btn_run.internal_pull = true;
+  btn_run.autorepeat = false;
+  btn_run.callback = on_button;
+
   ESP_ERROR_CHECK(button_init(&btn1));
   ESP_ERROR_CHECK(button_init(&btn2));
+  ESP_ERROR_CHECK(button_init(&btn_stop));
+  ESP_ERROR_CHECK(button_init(&btn_flush));
+  ESP_ERROR_CHECK(button_init(&btn_run));
+
+  const TickType_t xBlockTime = pdMS_TO_TICKS(9999 * 1000);
   while (true) {
-    vTaskDelay(99999 / portTICK_PERIOD_MS);
-    if (false) {
+    vTaskDelay(xBlockTime);
+    if (true) {
       ESP_LOGW(BUTTON_TAG, "button!");
     }
   }

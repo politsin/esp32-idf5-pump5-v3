@@ -64,7 +64,7 @@ void display_init() {
   spi_bus_config_t buscfg = {
       .sclk_io_num = BOARD_SPI_SCK,
       .mosi_io_num = BOARD_SPI_MOSI,
-      .miso_io_num = BOARD_SPI_MISO,
+      .miso_io_num = -1,
       .quadwp_io_num = -1,
       .quadhd_io_num = -1,
       .max_transfer_sz = AMOLED_HEIGHT * 80 * sizeof(uint16_t),

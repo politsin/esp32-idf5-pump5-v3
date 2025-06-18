@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
-static constexpr Pintype LED = GPIO_NUM_22;
+// static constexpr Pintype LED = GPIO_NUM_22;
 #include "sdkconfig.h"
 #include <esp_log.h>
 #include <rom/gpio.h>
@@ -150,30 +150,30 @@ void screenTask(void *pvParam) {
 
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nTime: %ld sec\n",
+                 "%ld\nP: %d\nTime: %ld sec\n",
                  app_state.encoder, app_state.water_target,
                  app_state.water_current, app_state.water_delta,
-                 app_state.time);
+                 app_state.valve, app_state.time);
 
-        if (notification & YELL_BUTTON_CLICKED_BIT) {
+        if (notification & BTN1_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
           lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000),
                                         LV_PART_MAIN);
           strcat(labelText, "Yellow Clicked\n");
           vTaskDelay(pdMS_TO_TICKS(100));
         }
-        if (notification & RED_BUTTON_PRESSED_BIT) {
+        if (notification & BTN2_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Red button pressed");
           strcat(labelText, "Red Pressed\n");
           lv_obj_set_style_border_color(btnRed, lv_color_hex(0xFF0000),
                                         LV_PART_MAIN);
           vTaskDelay(pdMS_TO_TICKS(100));
         }
-        if (notification & RED_BUTTON_RELEASED_BIT) {
+        if (notification & BTN_STOP_BIT) {
           lv_obj_set_style_border_color(btnYell, lv_color_white(),
                                         LV_PART_MAIN);
         }
-        if (notification & YELL_BUTTON_RELEASED_BIT) {
+        if (notification & BTN_RUN_BIT) {
           lv_obj_set_style_border_color(btnRed, lv_color_white(), LV_PART_MAIN);
         }
 
@@ -206,10 +206,10 @@ void screenTask(void *pvParam) {
         char labelText[128];
         snprintf(labelText, sizeof(labelText),
                  "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nTime: %ld sec\n",
+                 "%ld\nP: %d\nTime: %ld sec\n",
                  app_state.encoder, app_state.water_target,
                  app_state.water_current, app_state.water_delta,
-                 app_state.time);
+                 app_state.valve, app_state.time);
 
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);

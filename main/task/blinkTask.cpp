@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
-static constexpr Pintype LED = GPIO_NUM_22;
+static constexpr Pintype LED = GPIO_NUM_29;
 #include "sdkconfig.h"
 #include <esp_log.h>
 #include <rom/gpio.h>
