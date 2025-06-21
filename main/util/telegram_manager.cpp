@@ -54,13 +54,13 @@ esp_err_t telegram_send_message(const char* message)
         return ESP_FAIL;
     }
 
-    // Настройка HTTP клиента
-    esp_http_client_config_t config = {
-        .url = TELEGRAM_API_URL,
-        .method = HTTP_METHOD_POST,
-        .event_handler = http_event_handler,
-        .skip_cert_common_name_check = true,
-    };
+    // Настройка HTTP клиента с SSL
+    esp_http_client_config_t config = {};
+    config.url = TELEGRAM_API_URL;
+    config.method = HTTP_METHOD_POST;
+    config.event_handler = http_event_handler;
+    config.timeout_ms = 10000;
+    config.skip_cert_common_name_check = true;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
@@ -68,7 +68,6 @@ esp_err_t telegram_send_message(const char* message)
         free(json_string);
         return ESP_FAIL;
     }
-
 
     // Устанавливаем заголовки
     esp_http_client_set_header(client, "Content-Type", "application/json");
