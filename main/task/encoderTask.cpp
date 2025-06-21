@@ -14,6 +14,7 @@ using std::string;
 //.
 #include "counterTask.h"
 #include "screenTask.h"
+#include "../util/telegram_manager.h"
 
 // #include "mqttTask.h"
 #include "rotary_encoder.h"
@@ -30,6 +31,12 @@ static const gpio_num_t encoderBtn = GPIO_NUM_39;
 static const uint32_t debouncsEnc = 100;
 static const uint32_t debouncsBtn = 100;
 rotenc_handle_t handle = {};
+
+// Глобальные переменные для защиты от спама
+static uint32_t last_button_press_time = 0;
+static const uint32_t BUTTON_DEBOUNCE_MS = 1000; // 1 секунда между нажатиями
+static int32_t enc_last_sent = 0;  // Последнее отправленное значение
+
 static void button_callback(void *arg);
 static void event_callback(rotenc_event_t event);
 
@@ -51,6 +58,7 @@ void encoderTask(void *pvParam) {
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
       ESP_LOGI(ENC_TAG, "encoder= %ld ticks", enc);
+      
       vTaskDelay(pdMS_TO_TICKS(30));
     }
     vTaskDelay(xBlockTime);
@@ -85,6 +93,8 @@ static void button_callback(void *arg) {
   // rotenc_handle_t *handle = (rotenc_handle_t *)arg;
   // ESP_LOGE(ENC_TAG, "Push button >> ENC");
   // xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+  
+  // Кнопка энкодера - без отправки уведомлений в Telegram
 }
 static void event_callback(rotenc_event_t event) {
   enc = event.position;

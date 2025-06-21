@@ -19,6 +19,7 @@ static constexpr Pintype VALVE1 = GPIO_NUM_27;
 #define COUNTER_TAG "COUNTER"
 
 #include "task/screenTask.h"
+#include "../util/telegram_manager.h"
 TaskHandle_t counter;
 
 // Объявляем счетчик как глобальную переменную
@@ -191,6 +192,17 @@ void counterTask(void *pvParam) {
         // config->commit();
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
         ESP_LOGW(COUNTER_TAG, "Encoder changed: %ld", app_state.encoder);
+        
+        // Отправляем уведомление в Telegram об изменении уставки
+        char message[256];
+        snprintf(message, sizeof(message), 
+                "⚙️ Изменена уставка наливайки:\n"
+                "Базовая уставка: %lu\n"
+                "Сдвиг энкодера: %ld\n"
+                "Новая уставка: %lu", 
+                app_config.steps, app_state.encoder, 
+                app_state.water_target);
+        telegram_send_message(message);
       }
     }
     app_state.is_on = isOn;

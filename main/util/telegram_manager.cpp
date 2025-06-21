@@ -7,6 +7,10 @@
 
 static const char *TAG = "TELEGRAM_MANAGER";
 
+// Глобальные переменные для хранения ответа сервера
+static char *server_response = NULL;
+static int response_length = 0;
+
 // HTTP обработчик для отправки сообщений
 static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
@@ -19,6 +23,21 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_ON_FINISH:
             ESP_LOGI(TAG, "HTTP Client Finished");
+            break;
+        case HTTP_EVENT_ON_DATA:
+            // Получаем данные ответа
+            if (evt->data_len > 0) {
+                if (server_response) {
+                    free(server_response);
+                }
+                server_response = (char *)malloc(evt->data_len + 1);
+                if (server_response) {
+                    memcpy(server_response, evt->data, evt->data_len);
+                    server_response[evt->data_len] = '\0';
+                    response_length = evt->data_len;
+                    ESP_LOGI(TAG, "Received response: %s", server_response);
+                }
+            }
             break;
         default:
             break;
@@ -49,11 +68,11 @@ esp_err_t telegram_test_bot(void)
     ESP_LOGI(TAG, "Testing bot connection...");
     
     // Отладочная информация для теста
-    ESP_LOGI(TAG, "Test URL: https://api.telegram.org/bot/%s/getMe", TELEGRAM_BOT_TOKEN);
+    ESP_LOGI(TAG, "Test URL: https://api.telegram.org/bot%s/getUpdates", TELEGRAM_BOT_TOKEN);
     
     // Настройка HTTP клиента для теста
     esp_http_client_config_t config = {};
-    config.url = "https://api.telegram.org/bot/" TELEGRAM_BOT_TOKEN "/getMe";
+    config.url = "https://api.telegram.org/bot" TELEGRAM_BOT_TOKEN "/getUpdates";
     config.method = HTTP_METHOD_GET;
     config.event_handler = http_event_handler;
     config.timeout_ms = 10000;
@@ -80,26 +99,11 @@ esp_err_t telegram_test_bot(void)
         int status_code = esp_http_client_get_status_code(client);
         ESP_LOGI(TAG, "Test request status: %d", status_code);
         
-        // Получаем ответ сервера
-        int content_length = esp_http_client_get_content_length(client);
-        ESP_LOGI(TAG, "Response content length: %d", content_length);
-        
-        if (content_length > 0) {
-            char *buffer = (char *)malloc(content_length + 1);
-            if (buffer) {
-                // Сначала получаем заголовки
-                esp_http_client_fetch_headers(client);
-                
-                // Затем читаем тело ответа
-                int read_len = esp_http_client_read_response(client, buffer, content_length);
-                buffer[read_len] = '\0';
-                ESP_LOGI(TAG, "Bot test response: %s", buffer);
-                free(buffer);
-            } else {
-                ESP_LOGE(TAG, "Failed to allocate buffer for response");
-            }
+        // Проверяем, получили ли мы ответ через обработчик
+        if (server_response && response_length > 0) {
+            ESP_LOGI(TAG, "Bot test response: %s", server_response);
         } else {
-            ESP_LOGE(TAG, "Empty response from server");
+            ESP_LOGE(TAG, "No response received from server");
         }
         
         if (status_code == 200) {
@@ -113,6 +117,14 @@ esp_err_t telegram_test_bot(void)
     }
 
     esp_http_client_cleanup(client);
+    
+    // Очищаем ответ
+    if (server_response) {
+        free(server_response);
+        server_response = NULL;
+        response_length = 0;
+    }
+    
     return err;
 }
 
@@ -179,24 +191,11 @@ esp_err_t telegram_send_message(const char* message)
         } else {
             ESP_LOGE(TAG, "HTTP request failed, status: %d", status_code);
             
-            // Получаем ответ сервера для отладки
-            int content_length = esp_http_client_get_content_length(client);
-            if (content_length > 0) {
-                char *buffer = (char *)malloc(content_length + 1);
-                if (buffer) {
-                    // Сначала получаем заголовки
-                    esp_http_client_fetch_headers(client);
-                    
-                    // Затем читаем тело ответа
-                    int read_len = esp_http_client_read_response(client, buffer, content_length);
-                    buffer[read_len] = '\0';
-                    ESP_LOGE(TAG, "Server response: %s", buffer);
-                    free(buffer);
-                } else {
-                    ESP_LOGE(TAG, "Failed to allocate buffer for server response");
-                }
+            // Проверяем ответ сервера
+            if (server_response && response_length > 0) {
+                ESP_LOGE(TAG, "Server response: %s", server_response);
             } else {
-                ESP_LOGE(TAG, "Empty server response");
+                ESP_LOGE(TAG, "No server response received");
             }
             
             err = ESP_FAIL;
@@ -208,13 +207,20 @@ esp_err_t telegram_send_message(const char* message)
     esp_http_client_cleanup(client);
     free(json_string);
     
+    // Очищаем ответ
+    if (server_response) {
+        free(server_response);
+        server_response = NULL;
+        response_length = 0;
+    }
+    
     return err;
 }
 
 // Отправка уведомления о подключении к WiFi
 esp_err_t telegram_send_wifi_connected(void)
 {
-    const char* message = "🔌 Устройство подключилось к WiFi сети";
+    const char* message = "🔌 Наливайка подключилась к WiFi сети";
     return telegram_send_message(message);
 }
 
@@ -230,6 +236,6 @@ esp_err_t telegram_send_button_press(const char* button_name)
 esp_err_t telegram_send_device_status(const char* status)
 {
     char message[256];
-    snprintf(message, sizeof(message), "📊 Статус устройства: %s", status);
+    snprintf(message, sizeof(message), "📊 Статус наливайки: %s", status);
     return telegram_send_message(message);
 } 
