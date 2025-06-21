@@ -105,119 +105,134 @@ void screenTask(void *pvParam) {
 
   lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x003a57), LV_PART_MAIN);
 
-  // Create a white label, set its text and align it to the center*/
+  // Create основной label слева
   lv_obj_t *label = lv_label_create(lv_scr_act());
   lv_label_set_text(label, "water");
   lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
 
-  lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+  // Создаём отдельные label для P1–P5 справа
+  lv_obj_t *valve_labels[5];
+  lv_obj_t *valve_indicators[5]; // Кружочки для индикации активных клапанов
+  int valve_label_x = 135; // Было 120, стало 135 (ещё правее на 3 символа)
+  int valve_label_y_start = 8;
+  int valve_label_y_step = 18;
+  for (int i = 0; i < 5; i++) {
+    // Создаём кружочек-индикатор
+    valve_indicators[i] = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(valve_indicators[i], 8, 8);
+    lv_obj_set_style_radius(valve_indicators[i], 4, LV_PART_MAIN); // Делаем круглым
+    lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Изначально тёмно-серый
+    lv_obj_set_style_border_width(valve_indicators[i], 0, LV_PART_MAIN);
+    lv_obj_align(valve_indicators[i], LV_ALIGN_TOP_LEFT, valve_label_x - 15, valve_label_y_start + i * valve_label_y_step + 4);
+    
+    // Создаём label для времени клапана
+    valve_labels[i] = lv_label_create(lv_scr_act());
+    char txt[16];
+    snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+    lv_label_set_text(valve_labels[i], txt);
+    lv_obj_set_style_text_color(valve_labels[i], lv_color_hex(0x00ffcc), LV_PART_MAIN);
+    lv_obj_align(valve_labels[i], LV_ALIGN_TOP_LEFT, valve_label_x, valve_label_y_start + i * valve_label_y_step);
+  }
 
-  int btnX = 20; // Margin from right edge
-  // Distance from the top
-  int btnY_red = 10;
-  int btnY_yell = 50;
-  int btnY_blue = 90;
-
-  // Function to create a rectangle with specified color and position
-  auto createFig = [&](lv_color_t color, int y) -> lv_obj_t * {
+  // Перемещаем кнопки вниз экрана в линию
+  int btnY_bottom = 120; // Было 140, стало 120 (подняли ещё выше)
+  int btnSpacing = 35;
+  int btnX_start = 10;
+  auto createFig = [&](lv_color_t color, int x) -> lv_obj_t * {
     lv_obj_t *fig = lv_obj_create(lv_scr_act());
     lv_obj_set_size(fig, 30, 30);
     lv_obj_set_style_bg_color(fig, color, LV_PART_MAIN);
     lv_obj_set_style_border_color(fig, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_border_width(fig, 3, LV_PART_MAIN);
-    lv_obj_align(fig, LV_ALIGN_TOP_RIGHT, -btnX, y);
+    lv_obj_align(fig, LV_ALIGN_TOP_LEFT, x, btnY_bottom);
     return fig;
   };
-
-  // Create btn figure.
-  lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnY_red);
-  lv_obj_t *btnYell = createFig(lv_color_hex(0xAAFF00), btnY_yell);
-  lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnY_blue);
+  lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnX_start);
+  lv_obj_t *btnYell = createFig(lv_color_hex(0xAAFF00), btnX_start + btnSpacing);
+  lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
 
   uint32_t notification = 0;
   TickType_t lastUpdate = xTaskGetTickCount();
 
   while (true) {
-
     if (app_state.is_on) {
-      if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) ==
-          pdTRUE) { 
-
-        char labelText[128];
-
+      if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) == pdTRUE) {
+        char labelText[192];
         snprintf(labelText, sizeof(labelText),
-                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nP: %d\nTime: %ld sec\n",
+                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: %ld\nTime: %ld sec",
                  app_state.encoder, app_state.water_target,
                  app_state.water_current, app_state.water_delta,
-                 app_state.valve, app_state.time);
-
+                 app_state.time);
         if (notification & BTN1_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
-          lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000),
-                                        LV_PART_MAIN);
-          strcat(labelText, "Yellow Clicked\n");
+          lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000), LV_PART_MAIN);
+          strcat(labelText, "\nYellow Clicked");
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         if (notification & BTN2_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Red button pressed");
-          strcat(labelText, "Red Pressed\n");
-          lv_obj_set_style_border_color(btnRed, lv_color_hex(0xFF0000),
-                                        LV_PART_MAIN);
+          strcat(labelText, "\nRed Pressed");
+          lv_obj_set_style_border_color(btnRed, lv_color_hex(0xFF0000), LV_PART_MAIN);
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         if (notification & BTN_STOP_BIT) {
-          lv_obj_set_style_border_color(btnYell, lv_color_white(),
-                                        LV_PART_MAIN);
+          lv_obj_set_style_border_color(btnYell, lv_color_white(), LV_PART_MAIN);
         }
         if (notification & BTN_RUN_BIT) {
           lv_obj_set_style_border_color(btnRed, lv_color_white(), LV_PART_MAIN);
         }
-
         if (notification & COUNTER_FINISHED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Counter Finished");
-          strcat(labelText, "Counter Finished\n");
+          strcat(labelText, "\nCounter Finished");
         }
-
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
-          app_lvgl_unlock();
-        }
-
-        // vTaskDelay(pdMS_TO_TICKS(1000));
-        if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
-          // Optionally clear the events after a period (keep app_state)
-          //  lv_label_set_text(label, "");
+          for (int i = 0; i < 5; i++) {
+            char txt[16];
+            snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+            lv_label_set_text(valve_labels[i], txt);
+            
+            // Показываем зелёный кружочек, если клапан активен И помпа работает
+            if (app_state.is_on && i + 1 == app_state.valve) {
+              lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x00FF00), LV_PART_MAIN); // Зелёный
+            } else {
+              lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Тёмно-серый
+            }
+          }
           app_lvgl_unlock();
         }
       }
     } else {
-      if (xTaskGetTickCount() - lastUpdate >=
-          pdMS_TO_TICKS(1000)) {          // Check if 1 second has passed
-        lastUpdate = xTaskGetTickCount(); // Update the last update time
-
-        // Update app_state with current water level or whatever you need to
-        // display periodically.
-
-        // Prepare and display the label text (as before)...
-        char labelText[128];
+      if (xTaskGetTickCount() - lastUpdate >= pdMS_TO_TICKS(1000)) {
+        lastUpdate = xTaskGetTickCount();
+        char labelText[192];
         snprintf(labelText, sizeof(labelText),
-                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: "
-                 "%ld\nP: %d\nTime: %ld sec\n",
+                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: %ld\nTime: %ld sec",
                  app_state.encoder, app_state.water_target,
                  app_state.water_current, app_state.water_delta,
-                 app_state.valve, app_state.time);
-
+                 app_state.time);
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
+          for (int i = 0; i < 5; i++) {
+            char txt[16];
+            snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+            lv_label_set_text(valve_labels[i], txt);
+            
+            // Показываем зелёный кружочек, если клапан активен И помпа работает
+            if (app_state.is_on && i + 1 == app_state.valve) {
+              lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x00FF00), LV_PART_MAIN); // Зелёный
+            } else {
+              lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Тёмно-серый
+            }
+          }
           app_lvgl_unlock();
         }
-
       } else {
         vTaskDelay(pdMS_TO_TICKS(100));
       }
     }
-    lv_timer_handler(); // Handle LVGL updates
+    lv_timer_handler();
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

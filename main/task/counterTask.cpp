@@ -32,6 +32,10 @@ volatile bool valve3On = false;
 volatile bool valve4On = false;
 volatile bool valve5On = false;
 
+// Переменные для отслеживания времени клапанов
+volatile TickType_t valve_start_time = 0;
+volatile int8_t current_valve = 0;
+
 // Функция обработки прерывания
 static void IRAM_ATTR counter_isr_handler(void *arg) {
   // Увеличиваем счетчик при каждом прерывании
@@ -40,33 +44,91 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
   if (pumpOn) {
     int32_t target = app_state.water_target;
     if (rot < target) {
-      gpio_set_level(VALVE1, 1);
-      app_state.valve = 1;
+      if (current_valve != 1) {
+        // Завершаем предыдущий клапан
+        if (current_valve > 0 && current_valve <= 5) {
+          TickType_t end_time = xTaskGetTickCount();
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100; // Конвертируем в секунды
+        }
+        // Начинаем новый клапан
+        current_valve = 1;
+        valve_start_time = xTaskGetTickCount();
+        gpio_set_level(VALVE1, 1);
+        app_state.valve = 1;
+      }
     } else if (rot > target && rot < target * 2) {
-      gpio_set_level(VALVE1, 0);
-      gpio_set_level(VALVE2, 1);
-      app_state.valve = 2;
+      if (current_valve != 2) {
+        // Завершаем предыдущий клапан
+        if (current_valve > 0 && current_valve <= 5) {
+          TickType_t end_time = xTaskGetTickCount();
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+        }
+        // Начинаем новый клапан
+        current_valve = 2;
+        valve_start_time = xTaskGetTickCount();
+        gpio_set_level(VALVE1, 0);
+        gpio_set_level(VALVE2, 1);
+        app_state.valve = 2;
+      }
     } else if (rot > target * 2 && rot < target * 3) {
-      gpio_set_level(VALVE2, 0);
-      gpio_set_level(VALVE3, 1);
-      app_state.valve = 3;
+      if (current_valve != 3) {
+        // Завершаем предыдущий клапан
+        if (current_valve > 0 && current_valve <= 5) {
+          TickType_t end_time = xTaskGetTickCount();
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+        }
+        // Начинаем новый клапан
+        current_valve = 3;
+        valve_start_time = xTaskGetTickCount();
+        gpio_set_level(VALVE2, 0);
+        gpio_set_level(VALVE3, 1);
+        app_state.valve = 3;
+      }
     } else if (rot > target * 3 && rot < target * 4) {
-      gpio_set_level(VALVE3, 0);
-      gpio_set_level(VALVE4, 1);
-      app_state.valve = 4;
+      if (current_valve != 4) {
+        // Завершаем предыдущий клапан
+        if (current_valve > 0 && current_valve <= 5) {
+          TickType_t end_time = xTaskGetTickCount();
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+        }
+        // Начинаем новый клапан
+        current_valve = 4;
+        valve_start_time = xTaskGetTickCount();
+        gpio_set_level(VALVE3, 0);
+        gpio_set_level(VALVE4, 1);
+        app_state.valve = 4;
+      }
     } else if (rot > target * 3 && rot < target * 5) {
-      gpio_set_level(VALVE4, 0);
-      gpio_set_level(VALVE5, 1);
-      app_state.valve = 5;
+      if (current_valve != 5) {
+        // Завершаем предыдущий клапан
+        if (current_valve > 0 && current_valve <= 5) {
+          TickType_t end_time = xTaskGetTickCount();
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+        }
+        // Начинаем новый клапан
+        current_valve = 5;
+        valve_start_time = xTaskGetTickCount();
+        gpio_set_level(VALVE4, 0);
+        gpio_set_level(VALVE5, 1);
+        app_state.valve = 5;
+      }
     } else if (rot > target * 5) {
+      // Завершаем последний клапан
+      if (current_valve > 0 && current_valve <= 5) {
+        TickType_t end_time = xTaskGetTickCount();
+        app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+      }
+      
       if (app_state.rock) {
         rot = 0;
+        current_valve = 0;
         gpio_set_level(VALVE5, 0);
         gpio_set_level(VALVE1, 1);
       } else {
         gpio_set_level(VALVE5, 0);
         gpio_set_level(PUMP, 0);
         app_state.valve = 0;
+        current_valve = 0;
         pumpOn = false;
       }
     }
@@ -151,6 +213,12 @@ void counterTask(void *pvParam) {
         pumpOn = true;
         gpio_set_level(PUMP, isOn);
         app_state.water_delta = 0;
+        // Сброс времени клапанов
+        for (int i = 0; i < 5; i++) {
+          app_state.valve_times[i] = 0;
+        }
+        current_valve = 0;
+        valve_start_time = 0;
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(VALVE1, isOn);
@@ -165,6 +233,12 @@ void counterTask(void *pvParam) {
         pumpOn = true;
         gpio_set_level(PUMP, isOn);
         app_state.water_delta = 0;
+        // Сброс времени клапанов
+        for (int i = 0; i < 5; i++) {
+          app_state.valve_times[i] = 0;
+        }
+        current_valve = 0;
+        valve_start_time = 0;
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(VALVE1, isOn);
@@ -182,6 +256,8 @@ void counterTask(void *pvParam) {
         gpio_set_level(VALVE4, 0);
         gpio_set_level(VALVE5, 0);
         app_state.valve = 0;
+        current_valve = 0;
+        valve_start_time = 0;
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(PUMP, 0);
       }

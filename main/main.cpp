@@ -33,6 +33,7 @@ app_state_t app_state = {
     .water_delta = 0,
     .freeHeap = 0,
     .valve = 0,
+    .valve_times = {0, 0, 0, 0, 0}, // Инициализация времени клапанов
 };
 
 extern "C" void app_main(void) {

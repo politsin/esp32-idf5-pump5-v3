@@ -26,6 +26,7 @@ typedef struct {
   int32_t water_delta;
   int32_t freeHeap;
   int8_t valve;
+  int32_t valve_times[5]; // Время налива для каждого клапана P1-P5 (в секундах)
 } app_state_t;
 
 // Bitmask for screen notifications.  Note: this is an enum, not a struct.
