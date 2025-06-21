@@ -126,10 +126,10 @@ void screenTask(void *pvParam) {
     lv_obj_set_style_border_width(valve_indicators[i], 0, LV_PART_MAIN);
     lv_obj_align(valve_indicators[i], LV_ALIGN_TOP_RIGHT, -85, valve_label_y_start + i * valve_label_y_step + 4);
     
-    // Создаём label для времени клапана
+    // Создаём label для времени клапана (объединённый)
     valve_labels[i] = lv_label_create(lv_scr_act());
     char txt[16];
-    snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, app_state.valve_times[i] / 100.0f);
+    snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
     lv_label_set_text(valve_labels[i], txt);
     lv_obj_set_style_text_color(valve_labels[i], lv_color_hex(0x00ffcc), LV_PART_MAIN);
     lv_obj_align(valve_labels[i], LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + i * valve_label_y_step);
@@ -146,7 +146,7 @@ void screenTask(void *pvParam) {
     total_time += app_state.valve_times[i];
   }
   char total_txt[32];
-  snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", total_time / 100.0f);
+  snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
   lv_label_set_text(total_time_label, total_txt);
 
   // Перемещаем кнопки вниз экрана в линию
@@ -163,7 +163,7 @@ void screenTask(void *pvParam) {
     return fig;
   };
   lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnX_start);
-  lv_obj_t *btnYell = createFig(lv_color_hex(0xAAFF00), btnX_start + btnSpacing);
+  lv_obj_t *btnYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
   lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
 
   uint32_t notification = 0;
@@ -204,7 +204,7 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, app_state.valve_times[i] / 100.0f);
+            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
@@ -221,7 +221,7 @@ void screenTask(void *pvParam) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];
-          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", total_time / 100.0f);
+          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }
@@ -239,7 +239,7 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, app_state.valve_times[i] / 100.0f);
+            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
@@ -256,7 +256,7 @@ void screenTask(void *pvParam) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];
-          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", total_time / 100.0f);
+          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }

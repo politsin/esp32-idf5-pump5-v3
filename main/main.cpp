@@ -38,7 +38,8 @@ app_state_t app_state = {
 
 extern "C" void app_main(void) {
   config_init();
-  esp_log_level_set("wifi", ESP_LOG_WARN);
+  esp_log_level_set("wifi", ESP_LOG_ERROR);
+  esp_log_level_set("wifi_init", ESP_LOG_WARN);
   esp_log_level_set("TELEGRAM_MANAGER", ESP_LOG_WARN);
   esp_log_level_set("gpio", ESP_LOG_WARN);
   // esp_log_level_set("BUTTON", ESP_LOG_WARN);
@@ -50,6 +51,9 @@ extern "C" void app_main(void) {
 
   // Инициализация WiFi
   ESP_ERROR_CHECK(wifi_init());
+  
+  // Даём время системе стабилизироваться после инициализации WiFi
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
@@ -57,6 +61,7 @@ extern "C" void app_main(void) {
   // tasks.
   // i2c_init(true);
   // ESP_ERROR_CHECK(i2cdev_init());
+  ESP_LOGI(MAINTAG, "Creating tasks...");
   xTaskCreate(&loop, "loop", min * 3, NULL, 2, NULL);
   // xTaskCreate(stepperTask, "stepper", min * 8, NULL, 1, &stepper);
   // xTaskCreate(tofTask, "tof", min * 32, NULL, 1, &tof);
@@ -64,7 +69,8 @@ extern "C" void app_main(void) {
   xTaskCreate(buttonTask, "button", min * 4, NULL, 1, &button);
   xTaskCreate(counterTask, "counter", min * 10, NULL, 1, &counter);
   xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
-  xTaskCreatePinnedToCore(screenTask, "screen", min * 8, NULL, 1, &screen, 1);
+  xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
+  ESP_LOGI(MAINTAG, "All tasks created successfully");
   // xTaskCreatePinnedToCore(uartTask, "uart", min * 10, NULL, 1, &uart, 0);
   // xTaskCreate(hx711Task, "hx711", min * 16, NULL, 1, &hx711);
   // xTaskCreate(i2cScanTask, "i2cScan", min * 4, NULL, 5, &i2cScan);

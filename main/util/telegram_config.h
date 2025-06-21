@@ -6,6 +6,9 @@
 #define TELEGRAM_BOT_TOKEN "5039588685:AAFrqiYBHZvENSFfaDBOH6tQ-JAPs4mCgN8"
 #define TELEGRAM_CHAT_ID "70721939"
 
+// Иконка для идентификации наливайки (можно менять для разных устройств)
+#define TELEGRAM_DEVICE_ICON "🚰"
+
 // URL для отправки сообщений в Telegram (без лишнего слеша)
 #define TELEGRAM_API_URL "https://api.telegram.org/bot" TELEGRAM_BOT_TOKEN "/sendMessage"
 

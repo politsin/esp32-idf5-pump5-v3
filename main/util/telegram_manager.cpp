@@ -136,10 +136,14 @@ esp_err_t telegram_send_message(const char* message)
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Создаем сообщение с иконкой устройства
+    char full_message[512];
+    snprintf(full_message, sizeof(full_message), "%s %s", TELEGRAM_DEVICE_ICON, message);
+
     // Создаем JSON для отправки
     cJSON *json = cJSON_CreateObject();
     cJSON_AddStringToObject(json, "chat_id", TELEGRAM_CHAT_ID);
-    cJSON_AddStringToObject(json, "text", message);
+    cJSON_AddStringToObject(json, "text", full_message);
     
     char *json_string = cJSON_Print(json);
     cJSON_Delete(json);
@@ -220,7 +224,7 @@ esp_err_t telegram_send_message(const char* message)
 // Отправка уведомления о подключении к WiFi
 esp_err_t telegram_send_wifi_connected(void)
 {
-    const char* message = "🔌 Наливайка подключилась к WiFi сети";
+    const char* message = "Наливайка подключилась к WiFi сети";
     return telegram_send_message(message);
 }
 
@@ -228,7 +232,7 @@ esp_err_t telegram_send_wifi_connected(void)
 esp_err_t telegram_send_button_press(const char* button_name)
 {
     char message[256];
-    snprintf(message, sizeof(message), "🔘 Нажата кнопка: %s", button_name);
+    snprintf(message, sizeof(message), "Нажата кнопка: %s", button_name);
     return telegram_send_message(message);
 }
 
@@ -236,6 +240,6 @@ esp_err_t telegram_send_button_press(const char* button_name)
 esp_err_t telegram_send_device_status(const char* status)
 {
     char message[256];
-    snprintf(message, sizeof(message), "📊 Статус наливайки: %s", status);
+    snprintf(message, sizeof(message), "Статус наливайки: %s", status);
     return telegram_send_message(message);
 } 

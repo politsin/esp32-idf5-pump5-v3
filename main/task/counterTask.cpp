@@ -48,7 +48,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         // Завершаем предыдущий клапан
         if (current_valve > 0 && current_valve <= 5) {
           TickType_t end_time = xTaskGetTickCount();
-          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100; // Конвертируем в секунды
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time); // Сохраняем в тиках FreeRTOS
         }
         // Начинаем новый клапан
         current_valve = 1;
@@ -61,7 +61,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         // Завершаем предыдущий клапан
         if (current_valve > 0 && current_valve <= 5) {
           TickType_t end_time = xTaskGetTickCount();
-          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time);
         }
         // Начинаем новый клапан
         current_valve = 2;
@@ -75,7 +75,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         // Завершаем предыдущий клапан
         if (current_valve > 0 && current_valve <= 5) {
           TickType_t end_time = xTaskGetTickCount();
-          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time);
         }
         // Начинаем новый клапан
         current_valve = 3;
@@ -89,7 +89,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         // Завершаем предыдущий клапан
         if (current_valve > 0 && current_valve <= 5) {
           TickType_t end_time = xTaskGetTickCount();
-          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time);
         }
         // Начинаем новый клапан
         current_valve = 4;
@@ -103,7 +103,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         // Завершаем предыдущий клапан
         if (current_valve > 0 && current_valve <= 5) {
           TickType_t end_time = xTaskGetTickCount();
-          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+          app_state.valve_times[current_valve - 1] = (end_time - valve_start_time);
         }
         // Начинаем новый клапан
         current_valve = 5;
@@ -116,7 +116,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
       // Завершаем последний клапан
       if (current_valve > 0 && current_valve <= 5) {
         TickType_t end_time = xTaskGetTickCount();
-        app_state.valve_times[current_valve - 1] = (end_time - valve_start_time) / 100;
+        app_state.valve_times[current_valve - 1] = (end_time - valve_start_time);
       }
       
       if (app_state.rock) {
@@ -275,7 +275,7 @@ void counterTask(void *pvParam) {
         // Отправляем уведомление в Telegram об изменении уставки
         char message[256];
         snprintf(message, sizeof(message), 
-                "⚙️ Изменена уставка наливайки:\n"
+                "Изменена уставка наливайки:\n"
                 "Базовая уставка: %lu\n"
                 "Сдвиг энкодера: %ld\n"
                 "Новая уставка: %lu", 
@@ -292,7 +292,7 @@ void counterTask(void *pvParam) {
 
       // Stop timing and calculate elapsed time
       TickType_t endTime = xTaskGetTickCount();
-      app_state.time = (endTime - startTime) / 100; // Convert ticks to seconds
+      app_state.time = (endTime - startTime); // Convert ticks to seconds
       ESP_LOGW(COUNTER_TAG, "STOP %ld | done = %ld| Time: %ld seconds",
                app_state.water_target, rot, app_state.time);
 

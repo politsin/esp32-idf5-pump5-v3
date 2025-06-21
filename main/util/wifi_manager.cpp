@@ -21,18 +21,18 @@ static EventGroupHandle_t wifi_event_group;
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+    ESP_LOGI(TAG, "Connecting to AP...");
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    ESP_LOGI(TAG, "Disconnected from AP");
     esp_wifi_connect();
     xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+    ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", WIFI_SSID, WIFI_PASSWORD);
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-    
-    // Отправляем уведомление в Telegram о подключении к WiFi
-    telegram_send_wifi_connected();
   }
 }
 
