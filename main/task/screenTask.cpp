@@ -136,12 +136,12 @@ void screenTask(void *pvParam) {
   }
 
   // Перемещаем кнопки вниз экрана в линию
-  int btnY_bottom = 120; // Было 140, стало 120 (подняли ещё выше)
+  int btnY_bottom = 100; // Было 120, стало 100 (подняли ещё выше)
   int btnSpacing = 35;
   int btnX_start = 10;
   auto createFig = [&](lv_color_t color, int x) -> lv_obj_t * {
     lv_obj_t *fig = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(fig, 30, 30);
+    lv_obj_set_size(fig, 25, 25); // Было 30x30, стало 25x25 (уменьшили размер)
     lv_obj_set_style_bg_color(fig, color, LV_PART_MAIN);
     lv_obj_set_style_border_color(fig, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_border_width(fig, 3, LV_PART_MAIN);
