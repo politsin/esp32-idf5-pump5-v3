@@ -32,6 +32,7 @@ typedef struct {
   int32_t final_time; // Финальное время при остановке (в секундах)
   int32_t final_banks; // Финальное количество банок при остановке
   bool counter_error; // Флаг ошибки счётчика
+  int32_t previous_target; // Предыдущая цель для отображения изменения
 } app_state_t;
 
 // Bitmask for screen notifications.  Note: this is an enum, not a struct.

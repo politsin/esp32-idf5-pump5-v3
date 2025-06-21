@@ -39,6 +39,7 @@ app_state_t app_state = {
     .final_time = 0, // Инициализация финального времени
     .final_banks = 0, // Инициализация финального количества банок
     .counter_error = false, // Инициализация флага ошибки счётчика
+    .previous_target = 0, // Инициализация предыдущей цели
 };
 
 extern "C" void app_main(void) {

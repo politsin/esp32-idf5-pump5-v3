@@ -179,8 +179,8 @@ void screenTask(void *pvParam) {
           // Ошибка счётчика - показываем Err
           banks_count = app_state.final_banks;
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count);
         } else if (app_state.start_time > 0) {
           // Работает - показываем текущие значения
@@ -188,11 +188,9 @@ void screenTask(void *pvParam) {
           banks_count = app_state.banks_count;
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
-          ESP_LOGW(SCREEN_TAG, "DEBUG: start_time=%ld, now=%ld, total_seconds=%ld, minutes=%ld, seconds=%ld", 
-                   app_state.start_time, xTaskGetTickCount(), total_seconds, minutes, seconds);
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count,
                    minutes, seconds);
         } else {
@@ -202,8 +200,8 @@ void screenTask(void *pvParam) {
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count,
                    minutes, seconds);
         }
@@ -265,8 +263,8 @@ void screenTask(void *pvParam) {
           // Ошибка счётчика - показываем Err
           banks_count = app_state.final_banks;
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count);
         } else if (app_state.start_time > 0) {
           // Работает - показываем текущие значения
@@ -274,11 +272,9 @@ void screenTask(void *pvParam) {
           banks_count = app_state.banks_count;
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
-          ESP_LOGW(SCREEN_TAG, "DEBUG: start_time=%ld, now=%ld, total_seconds=%ld, minutes=%ld, seconds=%ld", 
-                   app_state.start_time, xTaskGetTickCount(), total_seconds, minutes, seconds);
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count,
                    minutes, seconds);
         } else {
@@ -288,8 +284,8 @@ void screenTask(void *pvParam) {
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
           snprintf(labelText, sizeof(labelText),
-                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
-                   app_state.encoder, app_state.water_target,
+                   "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.previous_target, app_state.water_target,
                    app_state.water_current, banks_count,
                    minutes, seconds);
         }

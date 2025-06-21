@@ -58,7 +58,7 @@ static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
 // Переменные для корректировки цели на основе скорости
 static int32_t last_correction_rot = 0;
 static TickType_t last_correction_time = 0;
-static const int32_t CORRECTION_INTERVAL = 50; // Корректируем каждые 50 тиков
+#define CORRECTION_INTERVAL 50
 static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
 static const int32_t TARGET_ML = 250; // Целевой объём в мл
 
@@ -70,21 +70,39 @@ static const float SLOW_ML = 272.0f;      // Объём при медленно�
 
 #define NORMAL_SPEED_ML_PER_SECOND (TARGET_ML / NORMAL_TIME) // 250/7 ≈ 35.7 мл/с
 
-// Функция для расчёта поправочного коэффициента на основе времени
-static float calculate_speed_correction(float time_seconds) {
-    if (time_seconds <= NORMAL_TIME) {
-        return 1.0f; // Нормальная скорость - без коррекции
+// Глобальные переменные для накопления перелитых тиков
+static int32_t accumulated_overpoured_ticks[5] = {0, 0, 0, 0, 0};
+
+// Массив предварительно рассчитанных тиков коррекции для скоростей от 30% до 100%
+static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 100%
+
+// Функция для расчёта тиков коррекции на основе процента скорости
+static int32_t calculate_correction_ticks(int speed_percent) {
+    if (speed_percent >= 100) {
+        return 0; // Нормальная скорость - без коррекции
     }
     
-    if (time_seconds >= SLOW_TIME) {
-        // При медленной скорости уменьшаем цель пропорционально
-        return NORMAL_ML / SLOW_ML; // 250/272 ≈ 0.919
-    }
+    // Рассчитываем сколько миллилитров перелили за полный target при текущей скорости
+    float speed_ratio = speed_percent / 100.0f;
+    float overpoured_ml = TARGET_ML * (1.0f - speed_ratio);
     
-    // Линейная интерполяция между точками
-    float time_ratio = (time_seconds - NORMAL_TIME) / (SLOW_TIME - NORMAL_TIME);
-    float ml_ratio = NORMAL_ML + (SLOW_ML - NORMAL_ML) * time_ratio;
-    return NORMAL_ML / ml_ratio;
+    // Переводим перелитые миллилитры в тики
+    int32_t overpoured_ticks_total = (int32_t)(overpoured_ml * BASE_TARGET / TARGET_ML);
+    
+    // Вычитаем за каждую итерацию коррекции
+    int32_t ticks_per_iteration = overpoured_ticks_total / (BASE_TARGET / CORRECTION_INTERVAL);
+    
+    return ticks_per_iteration;
+}
+
+// Функция для заполнения массива коррекций при старте
+static void init_speed_correction_array() {
+    ESP_LOGW(COUNTER_TAG, "Initializing speed correction array:");
+    for (int speed = 30; speed <= 100; speed++) {
+        int32_t correction = calculate_correction_ticks(speed);
+        speed_correction_ticks[speed - 30] = correction;
+        ESP_LOGW(COUNTER_TAG, "Speed %d%% -> correction %ld ticks", speed, correction);
+    }
 }
 
 // Функция обработки прерывания
@@ -98,8 +116,6 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             current_valve = 1;
             valve_start_time = xTaskGetTickCount();
             // Убираем лог из ISR - вызывает краш
-            // ESP_LOGW(COUNTER_TAG, "DEBUG: First valve init - valve_start_time=%ld, current_valve=%ld", 
-            //          valve_start_time, current_valve);
             app_state.valve = 1;
             gpio_set_level(VALVE1, 1);
             gpio_set_level(VALVE2, 0);
@@ -110,6 +126,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         }
 
         int32_t target = valve_targets[current_valve - 1];
+        
         if (rot >= target) {
             // Сохраняем время работы текущего клапана
             TickType_t current_time = xTaskGetTickCount();
@@ -122,9 +139,6 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             valve_start_time = current_time;
             
             // Убираем отладочный лог из ISR - может вызывать проблемы
-            // ESP_LOGW(COUNTER_TAG, "DEBUG: Valve switch - old_valve=%ld, valve_time=%ld ticks (%.2f s), target=%ld", 
-            //          (long)current_valve, valve_time, (float)valve_time / 100.0f, target);
-
             // Закрываем текущий клапан
             switch (current_valve) {
                 case 1: gpio_set_level(VALVE1, 0); break;
@@ -153,6 +167,16 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             rot = 0;
             pump_start_counter = 0;
             pump_start_time = xTaskGetTickCount(); // Сбрасываем время старта помпы
+            
+            // Сброс значений коррекции при переключении клапана
+            last_correction_rot = 0;
+            last_correction_time = xTaskGetTickCount();
+            
+            // Сброс target для нового клапана
+            valve_targets[current_valve - 1] = app_config.steps;
+            
+            // Сброс накопленных перелитых тиков для нового клапана
+            accumulated_overpoured_ticks[current_valve - 1] = 0;
 
             xTaskNotifyFromISR(screen, UPDATE_BIT, eSetBits, NULL);
         }
@@ -201,7 +225,6 @@ void counterTask(void *pvParam) {
   ESP_LOGW(COUNTER_TAG, "Enc FROM MEM: %lu", app_config.encoder);
 
   // Variables for timing
-  TickType_t startTime = 0;
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
@@ -211,6 +234,12 @@ void counterTask(void *pvParam) {
   for (int i = 0; i < 5; i++) {
     valve_targets[i] = app_config.steps;
   }
+  
+  // Инициализируем previous_target базовым значением из настроек
+  app_state.previous_target = app_config.steps;
+  
+  // Инициализируем массив коррекций скоростей
+  init_speed_correction_array();
 
   gpio_config_t di_config = {
       .pin_bit_mask = (1ULL << DI),
@@ -517,36 +546,32 @@ void counterTask(void *pvParam) {
         // Рассчитываем текущую скорость налива
         float current_speed_ml_per_second = (rot * TARGET_ML) / (BASE_TARGET * total_valve_time);
         
-        // Расчёт процента отставания от нормы
-        float speed_percent = (current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND) * 100.0f;
-        
         // Коррекция цели на основе скорости потока
-        float correction_factor = 1.0f;
         if (current_speed_ml_per_second < NORMAL_SPEED_ML_PER_SECOND) {
-            // Линейная аппроксимация: 50% скорости → цель 977, 100% скорости → цель 1075
-            float speed_ratio = current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND;
-            // 977/1075 = 0.909, поэтому при 50% скорости factor = 0.909
-            correction_factor = 0.909f + (1.0f - 0.909f) * speed_ratio; // От 0.909 до 1.0
+            // Получаем процент скорости
+            int speed_percent = (int)((current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND) * 100.0f);
+            
+            // Получаем тики коррекции из предварительно рассчитанного массива
+            int32_t ticks_per_iteration = 0;
+            if (speed_percent >= 30 && speed_percent <= 100) {
+                ticks_per_iteration = speed_correction_ticks[speed_percent - 30];
+            }
+            
+            // Уменьшаем базовый target на фиксированное количество тиков
+            int32_t new_target = valve_targets[current_valve - 1] - ticks_per_iteration;
+            
+            // Каждый раз устанавливаем цель на рассчитанное значение
+            valve_targets[current_valve - 1] = new_target;
+            
+            // Обновляем previous_target для отображения на экране (базовый target из настроек)
+            app_state.previous_target = app_config.steps;
+            app_state.water_target = new_target;
+            
+            ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks -> target %ld", 
+                     speed_percent, ticks_per_iteration, new_target);
         }
-        
-        // Усиливаем коррекцию в 1.5 раза для компенсации перелива
-        float enhanced_correction = 1.0f - (1.0f - correction_factor) * 1.5f;
-        int32_t new_target = (int32_t)(BASE_TARGET * enhanced_correction);
-        
-        // Теоретическая цель без усиления (для сравнения)
-        int32_t theoretical_target = (int32_t)(BASE_TARGET * correction_factor);
-        
-        // Каждый раз уменьшаем цель на рассчитанное значение
-        valve_targets[current_valve - 1] = new_target;
-        
-        // Рассчитываем текущее время работы клапана
-        TickType_t current_valve_work_time = now - valve_start_time;
-        
-        ESP_LOGW(COUNTER_TAG, "Speed analysis: valve %ld, total_time %.2fs, current_speed %.1f ml/s (%.1f%% of normal), factor %.3f, enhanced %.3f, target %ld (theoretical %ld), valve_work_time %.2fs", 
-                 (long)current_valve, total_valve_time, current_speed_ml_per_second, speed_percent, 
-                 correction_factor, enhanced_correction, new_target, theoretical_target, (float)current_valve_work_time / 100.0f);
+        last_correction_rot = rot;
       }
-      last_correction_rot = rot;
     }
     
     if ((i++ % 20) == true) {
