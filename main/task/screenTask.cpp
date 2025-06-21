@@ -129,7 +129,7 @@ void screenTask(void *pvParam) {
     // Создаём label для времени клапана (объединённый)
     valve_labels[i] = lv_label_create(lv_scr_act());
     char txt[16];
-    snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
+    snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
     lv_label_set_text(valve_labels[i], txt);
     lv_obj_set_style_text_color(valve_labels[i], lv_color_hex(0x00ffcc), LV_PART_MAIN);
     lv_obj_align(valve_labels[i], LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + i * valve_label_y_step);
@@ -146,7 +146,7 @@ void screenTask(void *pvParam) {
     total_time += app_state.valve_times[i];
   }
   char total_txt[32];
-  snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
+  snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
   lv_label_set_text(total_time_label, total_txt);
 
   // Перемещаем кнопки вниз экрана в линию
@@ -188,6 +188,8 @@ void screenTask(void *pvParam) {
           banks_count = app_state.banks_count;
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
+          ESP_LOGW(SCREEN_TAG, "DEBUG: start_time=%ld, now=%ld, total_seconds=%ld, minutes=%ld, seconds=%ld", 
+                   app_state.start_time, xTaskGetTickCount(), total_seconds, minutes, seconds);
           snprintf(labelText, sizeof(labelText),
                    "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
                    app_state.encoder, app_state.water_target,
@@ -231,7 +233,7 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
+            snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
@@ -248,7 +250,7 @@ void screenTask(void *pvParam) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];
-          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
+          snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }
@@ -272,6 +274,8 @@ void screenTask(void *pvParam) {
           banks_count = app_state.banks_count;
           minutes = total_seconds / 60;
           seconds = total_seconds % 60;
+          ESP_LOGW(SCREEN_TAG, "DEBUG: start_time=%ld, now=%ld, total_seconds=%ld, minutes=%ld, seconds=%ld", 
+                   app_state.start_time, xTaskGetTickCount(), total_seconds, minutes, seconds);
           snprintf(labelText, sizeof(labelText),
                    "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
                    app_state.encoder, app_state.water_target,
@@ -293,7 +297,7 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %5.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
+            snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
@@ -310,7 +314,7 @@ void screenTask(void *pvParam) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];
-          snprintf(total_txt, sizeof(total_txt), "Total: %5.2f s", (double)total_time / 100.0);
+          snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }

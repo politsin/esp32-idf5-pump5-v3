@@ -36,6 +36,9 @@ static volatile bool valve5On = false;
 static volatile TickType_t valve_start_time = 0;
 static int32_t current_valve = 0;
 
+// Массив для времени работы клапанов (обновляется в ISR)
+static volatile TickType_t valve_work_times[5] = {0, 0, 0, 0, 0};
+
 static TickType_t pump_start_time = 0; // Время старта помпы для защиты
 static int32_t pump_start_counter = 0; // Значение счётчика при старте помпы
 
@@ -49,7 +52,40 @@ static bool flush_mode = false;
 static int32_t last_valve = 0;
 
 // Массив целей для каждого клапана (пока все одинаковые)
+// 1075 - 250 ml
 static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
+
+// Переменные для корректировки цели на основе скорости
+static int32_t last_correction_rot = 0;
+static TickType_t last_correction_time = 0;
+static const int32_t CORRECTION_INTERVAL = 50; // Корректируем каждые 50 тиков
+static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
+static const int32_t TARGET_ML = 250; // Целевой объём в мл
+
+// Простая линейная экстраполяция по двум точкам
+static const float NORMAL_TIME = 7.0f;    // Нормальное время (7 сек)
+static const float SLOW_TIME = 15.0f;     // Медленное время (15 сек)
+static const float NORMAL_ML = 250.0f;    // Нормальный объём (250мл)
+static const float SLOW_ML = 272.0f;      // Объём при медленной скорости (272мл)
+
+#define NORMAL_SPEED_ML_PER_SECOND (TARGET_ML / NORMAL_TIME) // 250/7 ≈ 35.7 мл/с
+
+// Функция для расчёта поправочного коэффициента на основе времени
+static float calculate_speed_correction(float time_seconds) {
+    if (time_seconds <= NORMAL_TIME) {
+        return 1.0f; // Нормальная скорость - без коррекции
+    }
+    
+    if (time_seconds >= SLOW_TIME) {
+        // При медленной скорости уменьшаем цель пропорционально
+        return NORMAL_ML / SLOW_ML; // 250/272 ≈ 0.919
+    }
+    
+    // Линейная интерполяция между точками
+    float time_ratio = (time_seconds - NORMAL_TIME) / (SLOW_TIME - NORMAL_TIME);
+    float ml_ratio = NORMAL_ML + (SLOW_ML - NORMAL_ML) * time_ratio;
+    return NORMAL_ML / ml_ratio;
+}
 
 // Функция обработки прерывания
 static void IRAM_ATTR counter_isr_handler(void *arg) {
@@ -61,6 +97,9 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         if (current_valve == 0) {
             current_valve = 1;
             valve_start_time = xTaskGetTickCount();
+            // Убираем лог из ISR - вызывает краш
+            // ESP_LOGW(COUNTER_TAG, "DEBUG: First valve init - valve_start_time=%ld, current_valve=%ld", 
+            //          valve_start_time, current_valve);
             app_state.valve = 1;
             gpio_set_level(VALVE1, 1);
             gpio_set_level(VALVE2, 0);
@@ -71,13 +110,20 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         }
 
         int32_t target = valve_targets[current_valve - 1];
-
         if (rot >= target) {
             // Сохраняем время работы текущего клапана
             TickType_t current_time = xTaskGetTickCount();
             TickType_t valve_time = current_time - valve_start_time;
-            app_state.valve_times[current_valve - 1] = valve_time / 100;
+            app_state.valve_times[current_valve - 1] = valve_time; // Сохраняем в тиках для точности
+            
+            // Обновляем время работы клапана в массиве (в тиках)
+            valve_work_times[current_valve - 1] = valve_time;
+            
             valve_start_time = current_time;
+            
+            // Убираем отладочный лог из ISR - может вызывать проблемы
+            // ESP_LOGW(COUNTER_TAG, "DEBUG: Valve switch - old_valve=%ld, valve_time=%ld ticks (%.2f s), target=%ld", 
+            //          (long)current_valve, valve_time, (float)valve_time / 100.0f, target);
 
             // Закрываем текущий клапан
             switch (current_valve) {
@@ -179,6 +225,12 @@ void counterTask(void *pvParam) {
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
       if (notification & BTN_FLUSH_BIT) {
+        // Промывка возможна только из состояния idle (после остановки)
+        if (isOn || app_state.start_time > 0) {
+          ESP_LOGW(COUNTER_TAG, "Flush rejected: system is running. Stop first!");
+          continue;
+        }
+        
         ESP_LOGW(COUNTER_TAG, "Flush started!");
         
         // Включаем режим промывки
@@ -200,21 +252,18 @@ void counterTask(void *pvParam) {
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
-        // Ждём 3 секунды
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        
-        // Закрываем все клапаны
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
-        app_state.valve = 0; // Все клапаны закрыты
-        xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-        
         // Делаем 2 круга: каждый клапан на 1 секунду
         for (int round = 0; round < 2; round++) {
           for (int valve = 1; valve <= 5; valve++) {
+            // Проверяем STOP каждые 100мс
+            uint32_t stop_check = 0;
+            if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
+              if (stop_check & BTN_STOP_BIT) {
+                ESP_LOGW(COUNTER_TAG, "STOP during flush!");
+                goto flush_stopped;
+              }
+            }
+            
             // Открываем нужный клапан
             switch (valve) {
               case 1: gpio_set_level(VALVE1, 1); break;
@@ -226,10 +275,17 @@ void counterTask(void *pvParam) {
             
             app_state.valve = valve;
             xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-            ESP_LOGW(COUNTER_TAG, "Flush: valve %d, round %d", valve, round + 1);
+            ESP_LOGW(COUNTER_TAG, "Flush: valve %ld, round %d", (long)valve, round + 1);
             
-            // Ждём 1 секунду
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            // Ждём 1 секунду с проверкой STOP каждые 100мс
+            for (int i = 0; i < 10; i++) {
+              if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (stop_check & BTN_STOP_BIT) {
+                  ESP_LOGW(COUNTER_TAG, "STOP during flush!");
+                  goto flush_stopped;
+                }
+              }
+            }
             
             // Закрываем клапан
             switch (valve) {
@@ -245,17 +301,16 @@ void counterTask(void *pvParam) {
           }
         }
         
-        // Закрываем все клапаны
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
-        app_state.valve = 0; // Все клапаны закрыты
-        xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-        
         // Ждём 1 секунду и выключаем помпу
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        for (int i = 0; i < 10; i++) {
+          uint32_t stop_check = 0;
+          if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (stop_check & BTN_STOP_BIT) {
+              ESP_LOGW(COUNTER_TAG, "STOP during flush!");
+              goto flush_stopped;
+            }
+          }
+        }
         
         // В конце промывки ещё на 2 секунды открываем все клапаны
         gpio_set_level(VALVE1, 1);
@@ -266,8 +321,16 @@ void counterTask(void *pvParam) {
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
-        // Ждём 2 секунды
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        // Ждём 2 секунды с проверкой STOP
+        for (int i = 0; i < 20; i++) {
+          uint32_t stop_check = 0;
+          if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (stop_check & BTN_STOP_BIT) {
+              ESP_LOGW(COUNTER_TAG, "STOP during flush!");
+              goto flush_stopped;
+            }
+          }
+        }
         
         // Закрываем все клапаны и выключаем помпу
         gpio_set_level(VALVE1, 0);
@@ -286,6 +349,24 @@ void counterTask(void *pvParam) {
         flush_mode = false;
         
         ESP_LOGW(COUNTER_TAG, "Flush completed!");
+        continue; // Переходим к следующей итерации цикла
+        
+        flush_stopped:
+        // Обработка остановки промывки
+        gpio_set_level(VALVE1, 0);
+        gpio_set_level(VALVE2, 0);
+        gpio_set_level(VALVE3, 0);
+        gpio_set_level(VALVE4, 0);
+        gpio_set_level(VALVE5, 0);
+        gpio_set_level(PUMP, 0);
+        isOn = false;
+        pumpOn = false;
+        app_state.is_on = isOn;
+        app_state.valve = 0;
+        flush_mode = false;
+        xTaskNotify(screen, UPDATE_BIT, eSetBits);
+        ESP_LOGW(COUNTER_TAG, "Flush stopped by user!");
+        continue;
       }
       if (notification & BTN_RUN_BIT) {
         // Каждый старт всегда начинается с первого клапана
@@ -299,6 +380,7 @@ void counterTask(void *pvParam) {
         // Сброс времени клапанов и счётчика банок
         for (int i = 0; i < 5; i++) {
           app_state.valve_times[i] = 0;
+          valve_work_times[i] = 0; // Сбрасываем время работы клапанов
         }
         app_state.banks_count = 0; // Сброс счётчика банок
         app_state.start_time = xTaskGetTickCount(); // Запоминаем время старта
@@ -311,6 +393,9 @@ void counterTask(void *pvParam) {
         warning_sent = false;
         // Выключаем режим промывки при старте обычной работы
         flush_mode = false;
+        // Инициализация переменных для коррекции скорости
+        last_correction_rot = 0;
+        last_correction_time = xTaskGetTickCount();
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
         // НЕ управляем клапанами здесь - только в прерывании!
@@ -339,9 +424,9 @@ void counterTask(void *pvParam) {
           int32_t total_time = xTaskGetTickCount() - app_state.start_time;
           app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
           app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
-          app_state.start_time = 0; // Останавливаем время
           telegram_send_completion_report(app_state.banks_count, total_time);
         }
+        app_state.start_time = 0; // Останавливаем время
         
         pump_start_time = 0; // Сбрасываем время старта помпы
         vTaskDelay(pdMS_TO_TICKS(300));
@@ -378,7 +463,7 @@ void counterTask(void *pvParam) {
     
     // Отслеживаем изменения клапанов для отладки
     if (app_state.valve != last_valve) {
-      ESP_LOGW(COUNTER_TAG, "VALVE CHANGED: %d -> %d", (int)last_valve, app_state.valve);
+      ESP_LOGW(COUNTER_TAG, "VALVE CHANGED: %d -> %ld", (int)last_valve, (long)app_state.valve);
       last_valve = app_state.valve;
     }
     
@@ -419,6 +504,49 @@ void counterTask(void *pvParam) {
         gpio_set_level(PUMP, 0);
         pump_start_time = 0;
       }
+    }
+    
+    // Коррекция цели каждые 50 тиков на основе общего времени работы клапана
+    if (rot - last_correction_rot >= CORRECTION_INTERVAL) {
+      TickType_t now = xTaskGetTickCount();
+      
+      // Считаем общее время работы текущего клапана
+      float total_valve_time = (now - valve_start_time) / 100.0f;
+      
+      if (total_valve_time > 0.1f) { // чтобы не было деления на ноль
+        // Рассчитываем текущую скорость налива
+        float current_speed_ml_per_second = (rot * TARGET_ML) / (BASE_TARGET * total_valve_time);
+        
+        // Расчёт процента отставания от нормы
+        float speed_percent = (current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND) * 100.0f;
+        
+        // Коррекция цели на основе скорости потока
+        float correction_factor = 1.0f;
+        if (current_speed_ml_per_second < NORMAL_SPEED_ML_PER_SECOND) {
+            // Линейная аппроксимация: 50% скорости → цель 977, 100% скорости → цель 1075
+            float speed_ratio = current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND;
+            // 977/1075 = 0.909, поэтому при 50% скорости factor = 0.909
+            correction_factor = 0.909f + (1.0f - 0.909f) * speed_ratio; // От 0.909 до 1.0
+        }
+        
+        // Усиливаем коррекцию в 1.5 раза для компенсации перелива
+        float enhanced_correction = 1.0f - (1.0f - correction_factor) * 1.5f;
+        int32_t new_target = (int32_t)(BASE_TARGET * enhanced_correction);
+        
+        // Теоретическая цель без усиления (для сравнения)
+        int32_t theoretical_target = (int32_t)(BASE_TARGET * correction_factor);
+        
+        // Каждый раз уменьшаем цель на рассчитанное значение
+        valve_targets[current_valve - 1] = new_target;
+        
+        // Рассчитываем текущее время работы клапана
+        TickType_t current_valve_work_time = now - valve_start_time;
+        
+        ESP_LOGW(COUNTER_TAG, "Speed analysis: valve %ld, total_time %.2fs, current_speed %.1f ml/s (%.1f%% of normal), factor %.3f, enhanced %.3f, target %ld (theoretical %ld), valve_work_time %.2fs", 
+                 (long)current_valve, total_valve_time, current_speed_ml_per_second, speed_percent, 
+                 correction_factor, enhanced_correction, new_target, theoretical_target, (float)current_valve_work_time / 100.0f);
+      }
+      last_correction_rot = rot;
     }
     
     if ((i++ % 20) == true) {
