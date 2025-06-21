@@ -82,17 +82,14 @@ static int32_t calculate_correction_ticks(int speed_percent) {
         return 0; // Нормальная скорость - без коррекции
     }
     
-    // Рассчитываем сколько миллилитров перелили за полный target при текущей скорости
-    float speed_ratio = speed_percent / 100.0f;
-    float overpoured_ml = TARGET_ML * (1.0f - speed_ratio);
+    // При скорости 50% target должен быть 988 тиков
+    // За 21 корректировку: (1075-988)/21 = 87/21 = 4 тика за корректировку
+    // При скорости 50% вычитаем 4 тика за корректировку
+    int32_t ticks_per_iteration = (BASE_TARGET - 988) / (BASE_TARGET / CORRECTION_INTERVAL);
     
-    // Переводим перелитые миллилитры в тики
-    int32_t overpoured_ticks_total = (int32_t)(overpoured_ml * BASE_TARGET / TARGET_ML);
-    
-    // Вычитаем за каждую итерацию коррекции
-    int32_t ticks_per_iteration = overpoured_ticks_total / (BASE_TARGET / CORRECTION_INTERVAL);
-    
-    return ticks_per_iteration;
+    // Пропорционально для других скоростей (чем больше скорость, тем меньше коррекция)
+    float speed_ratio = (100.0f - speed_percent) / 50.0f; // относительно 50%
+    return (int32_t)(ticks_per_iteration * speed_ratio);
 }
 
 // Функция для заполнения массива коррекций при старте
