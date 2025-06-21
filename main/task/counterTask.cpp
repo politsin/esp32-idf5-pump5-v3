@@ -85,7 +85,9 @@ static int32_t calculate_correction_ticks(int speed_percent) {
     // При скорости 50% target должен быть 988 тиков
     // За 21 корректировку: (1075-988)/21 = 87/21 = 4 тика за корректировку
     // При скорости 50% вычитаем 4 тика за корректировку
-    int32_t ticks_per_iteration = (BASE_TARGET - 970) / (BASE_TARGET / CORRECTION_INTERVAL);
+    int32_t persent = 88;
+    int32_t target_correction = BASE_TARGET * persent / 100;
+    int32_t ticks_per_iteration = (BASE_TARGET - target_correction) / (BASE_TARGET / CORRECTION_INTERVAL);
     
     // Пропорционально для других скоростей (чем больше скорость, тем меньше коррекция)
     float speed_ratio = (100.0f - speed_percent) / 50.0f; // относительно 50%
