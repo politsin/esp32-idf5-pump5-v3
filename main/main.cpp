@@ -34,12 +34,18 @@ app_state_t app_state = {
     .freeHeap = 0,
     .valve = 0,
     .valve_times = {0, 0, 0, 0, 0}, // Инициализация времени клапанов
+    .banks_count = 0, // Инициализация счётчика банок
+    .start_time = 0, // Инициализация времени старта
+    .final_time = 0, // Инициализация финального времени
+    .final_banks = 0, // Инициализация финального количества банок
+    .counter_error = false, // Инициализация флага ошибки счётчика
 };
 
 extern "C" void app_main(void) {
   config_init();
   esp_log_level_set("wifi", ESP_LOG_ERROR);
   esp_log_level_set("wifi_init", ESP_LOG_WARN);
+  esp_log_level_set("WIFI_MANAGER", ESP_LOG_WARN);
   esp_log_level_set("TELEGRAM_MANAGER", ESP_LOG_WARN);
   esp_log_level_set("gpio", ESP_LOG_WARN);
   // esp_log_level_set("BUTTON", ESP_LOG_WARN);
@@ -51,9 +57,6 @@ extern "C" void app_main(void) {
 
   // Инициализация WiFi
   ESP_ERROR_CHECK(wifi_init());
-  
-  // Даём время системе стабилизироваться после инициализации WiFi
-  vTaskDelay(pdMS_TO_TICKS(1000));
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());

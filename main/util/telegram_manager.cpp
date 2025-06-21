@@ -50,14 +50,8 @@ esp_err_t telegram_init(void)
 {
     ESP_LOGI(TAG, "Telegram manager initialized");
     
-    // Тестируем бота при инициализации
-    ESP_LOGI(TAG, "Testing bot connection...");
-    esp_err_t test_result = telegram_test_bot();
-    if (test_result == ESP_OK) {
-        ESP_LOGI(TAG, "Bot test passed - ready to send messages");
-    } else {
-        ESP_LOGE(TAG, "Bot test failed - check token and network");
-    }
+    // Убираем автоматический тест бота, который вызывает ошибку 409
+    // Бот будет протестирован при первой отправке сообщения
     
     return ESP_OK;
 }
@@ -241,5 +235,23 @@ esp_err_t telegram_send_device_status(const char* status)
 {
     char message[256];
     snprintf(message, sizeof(message), "Статус наливайки: %s", status);
+    return telegram_send_message(message);
+}
+
+// Отправка отчёта о завершении работы
+esp_err_t telegram_send_completion_report(int32_t banks_count, int32_t total_time_ticks)
+{
+    char message[512];
+    int32_t total_seconds = total_time_ticks / 100;
+    int32_t hours = total_seconds / 3600;
+    int32_t minutes = (total_seconds % 3600) / 60;
+    int32_t seconds = total_seconds % 60;
+    
+    snprintf(message, sizeof(message), 
+             "🏁 Работа завершена!\n"
+             "Налито банок: %ld\n"
+             "Время работы: %02ld:%02ld:%02ld",
+             banks_count, hours, minutes, seconds);
+    
     return telegram_send_message(message);
 } 

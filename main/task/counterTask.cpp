@@ -23,18 +23,21 @@ static constexpr Pintype VALVE1 = GPIO_NUM_27;
 TaskHandle_t counter;
 
 // Объявляем счетчик как глобальную переменную
-volatile uint32_t rot = 0;
+static volatile int32_t rot = 0;
 
-volatile bool pumpOn = false;
-volatile bool valve1On = false;
-volatile bool valve2On = false;
-volatile bool valve3On = false;
-volatile bool valve4On = false;
-volatile bool valve5On = false;
+static volatile bool pumpOn = false;
+static volatile bool valve1On = false;
+static volatile bool valve2On = false;
+static volatile bool valve3On = false;
+static volatile bool valve4On = false;
+static volatile bool valve5On = false;
 
 // Переменные для отслеживания времени клапанов
-volatile TickType_t valve_start_time = 0;
-volatile int8_t current_valve = 0;
+static volatile TickType_t valve_start_time = 0;
+static int32_t current_valve = 0;
+
+static TickType_t pump_start_time = 0; // Время старта помпы для защиты
+static int32_t pump_start_counter = 0; // Значение счётчика при старте помпы
 
 // Функция обработки прерывания
 static void IRAM_ATTR counter_isr_handler(void *arg) {
@@ -55,6 +58,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         valve_start_time = xTaskGetTickCount();
         gpio_set_level(VALVE1, 1);
         app_state.valve = 1;
+        app_state.banks_count++; // Увеличиваем счётчик банок
       }
     } else if (rot > target && rot < target * 2) {
       if (current_valve != 2) {
@@ -69,6 +73,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         gpio_set_level(VALVE1, 0);
         gpio_set_level(VALVE2, 1);
         app_state.valve = 2;
+        app_state.banks_count++; // Увеличиваем счётчик банок
       }
     } else if (rot > target * 2 && rot < target * 3) {
       if (current_valve != 3) {
@@ -83,6 +88,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         gpio_set_level(VALVE2, 0);
         gpio_set_level(VALVE3, 1);
         app_state.valve = 3;
+        app_state.banks_count++; // Увеличиваем счётчик банок
       }
     } else if (rot > target * 3 && rot < target * 4) {
       if (current_valve != 4) {
@@ -97,6 +103,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         gpio_set_level(VALVE3, 0);
         gpio_set_level(VALVE4, 1);
         app_state.valve = 4;
+        app_state.banks_count++; // Увеличиваем счётчик банок
       }
     } else if (rot > target * 3 && rot < target * 5) {
       if (current_valve != 5) {
@@ -111,6 +118,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         gpio_set_level(VALVE4, 0);
         gpio_set_level(VALVE5, 1);
         app_state.valve = 5;
+        app_state.banks_count++; // Увеличиваем счётчик банок
       }
     } else if (rot > target * 5) {
       // Завершаем последний клапан
@@ -124,6 +132,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
         current_valve = 0;
         gpio_set_level(VALVE5, 0);
         gpio_set_level(VALVE1, 1);
+        pump_start_counter = 0; // Сбрасываем счётчик при переключении на второй круг
       } else {
         gpio_set_level(VALVE5, 0);
         gpio_set_level(PUMP, 0);
@@ -178,7 +187,6 @@ void counterTask(void *pvParam) {
 
   // Variables for timing
   TickType_t startTime = 0;
-
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
@@ -209,23 +217,34 @@ void counterTask(void *pvParam) {
         ESP_LOGW(COUNTER_TAG, "Flush!");
       }
       if (notification & BTN_RUN_BIT) {
-        app_state.rock = true;
-        ESP_LOGW(COUNTER_TAG, "Run!");
-        rot = 0;
-        isOn = true;
-        pumpOn = true;
-        gpio_set_level(PUMP, isOn);
-        app_state.water_delta = 0;
-        // Сброс времени клапанов
-        for (int i = 0; i < 5; i++) {
-          app_state.valve_times[i] = 0;
+        if (!app_state.rock) {
+          // Только если не в режиме rock - сбрасываем счётчики
+          app_state.rock = true;
+          ESP_LOGW(COUNTER_TAG, "Run!");
+          rot = 0;
+          isOn = true;
+          pumpOn = true;
+          gpio_set_level(PUMP, isOn);
+          app_state.water_delta = 0;
+          // Сброс времени клапанов и счётчика банок
+          for (int i = 0; i < 5; i++) {
+            app_state.valve_times[i] = 0;
+          }
+          app_state.banks_count = 0; // Сброс счётчика банок
+          app_state.start_time = xTaskGetTickCount(); // Запоминаем время старта
+          pump_start_time = xTaskGetTickCount(); // Запоминаем время старта помпы для защиты
+          pump_start_counter = rot; // Запоминаем значение счётчика при старте помпы
+          app_state.counter_error = false; // Сбрасываем флаг ошибки счётчика
+          current_valve = 0;
+          valve_start_time = 0;
+          xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
+          vTaskDelay(pdMS_TO_TICKS(300));
+          gpio_set_level(VALVE1, isOn);
+          app_state.valve = 1;
+        } else {
+          // Если уже в режиме rock - просто продолжаем работу
+          ESP_LOGW(COUNTER_TAG, "Already running, continuing...");
         }
-        current_valve = 0;
-        valve_start_time = 0;
-        xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
-        vTaskDelay(pdMS_TO_TICKS(300));
-        gpio_set_level(VALVE1, isOn);
-        app_state.valve = 1;
       }
       if (notification & BTN_FLUSH_BIT) {
         ESP_LOGW(COUNTER_TAG, "START!! Flush");
@@ -248,7 +267,7 @@ void counterTask(void *pvParam) {
         app_state.valve = 1;
       }
       if (notification & BTN_STOP_BIT) {
-        ESP_LOGW(COUNTER_TAG, "STOP Emegrensy!");
+        ESP_LOGW(COUNTER_TAG, "STOP Emergency!");
         app_state.rock = false;
         rot = 0;
         isOn = false;
@@ -261,6 +280,17 @@ void counterTask(void *pvParam) {
         app_state.valve = 0;
         current_valve = 0;
         valve_start_time = 0;
+        
+        // Останавливаем время и отправляем отчёт в Telegram
+        if (app_state.start_time > 0) {
+          int32_t total_time = xTaskGetTickCount() - app_state.start_time;
+          app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
+          app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
+          app_state.start_time = 0; // Останавливаем время
+          telegram_send_completion_report(app_state.banks_count, total_time);
+        }
+        
+        pump_start_time = 0; // Сбрасываем время старта помпы
         vTaskDelay(pdMS_TO_TICKS(300));
         gpio_set_level(PUMP, 0);
       }
@@ -286,6 +316,55 @@ void counterTask(void *pvParam) {
     }
     app_state.is_on = isOn;
     app_state.water_current = rot;
+    
+    // Проверка защиты от сухого хода помпы
+    if (isOn && pump_start_time > 0) {
+      TickType_t pump_work_time = xTaskGetTickCount() - pump_start_time;
+      int32_t counter_increase = rot - pump_start_counter;
+      
+      // Если помпа работает больше 4 секунд и счётчик увеличился меньше чем на 100
+      if (pump_work_time > pdMS_TO_TICKS(4000) && counter_increase < 100) {
+        ESP_LOGW(COUNTER_TAG, "DRY RUN PROTECTION! Pump working for 4s but counter increased only by %ld", counter_increase);
+        
+        // Автоматически останавливаем работу
+        app_state.rock = false;
+        isOn = false;
+        pumpOn = false;
+        gpio_set_level(VALVE1, 0);
+        gpio_set_level(VALVE2, 0);
+        gpio_set_level(VALVE3, 0);
+        gpio_set_level(VALVE4, 0);
+        gpio_set_level(VALVE5, 0);
+        app_state.valve = 0;
+        current_valve = 0;
+        valve_start_time = 0;
+        
+        // Сохраняем финальные значения и отправляем отчёт
+        if (app_state.start_time > 0) {
+          int32_t total_time = xTaskGetTickCount() - app_state.start_time;
+          app_state.final_time = total_time / 100;
+          app_state.final_banks = app_state.banks_count;
+          app_state.start_time = 0;
+          app_state.counter_error = true; // Устанавливаем флаг ошибки счётчика
+          
+          // Отправляем специальное сообщение о срабатывании защиты
+          char message[256];
+          snprintf(message, sizeof(message), 
+                  "🚨 АВАРИЯ! Счётчик не работает!\n"
+                  "Помпа работала 4 секунды, но счётчик увеличился только на %ld\n"
+                  "Налито банок: %ld\n"
+                  "Время работы: %02ld:%02ld",
+                  counter_increase, app_state.banks_count,
+                  (total_time / 100) / 60, ((total_time / 100) % 60));
+          telegram_send_message(message);
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(300));
+        gpio_set_level(PUMP, 0);
+        pump_start_time = 0; // Сбрасываем время старта помпы
+      }
+    }
+    
     if (!app_state.rock && rot > app_state.water_target * 5) {
       isOn = false;
       gpio_set_level(PUMP, isOn);
@@ -299,6 +378,18 @@ void counterTask(void *pvParam) {
       isOn = false;
       app_state.is_on = isOn;
       app_state.water_delta = rot - app_state.water_target * 5;
+      
+      // Отправляем отчёт в Telegram о завершении работы
+      if (app_state.start_time > 0) {
+        int32_t total_time = xTaskGetTickCount() - app_state.start_time;
+        app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
+        app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
+        app_state.start_time = 0; // Останавливаем время
+        telegram_send_completion_report(app_state.banks_count, total_time);
+      }
+      
+      pump_start_time = 0; // Сбрасываем время старта помпы
+      
       // Notify screen task about counter finishing
       xTaskNotify(screen, COUNTER_FINISHED_BIT, eSetBits);
       vTaskDelay(pdMS_TO_TICKS(1000));

@@ -173,11 +173,38 @@ void screenTask(void *pvParam) {
     if (app_state.is_on) {
       if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) == pdTRUE) {
         char labelText[192];
-        snprintf(labelText, sizeof(labelText),
-                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: %ld\nTime: %ld sec",
-                 app_state.encoder, app_state.water_target,
-                 app_state.water_current, app_state.water_delta,
-                 app_state.time);
+        int32_t total_seconds, minutes, seconds, banks_count;
+        
+        if (app_state.counter_error) {
+          // Ошибка счётчика - показываем Err
+          banks_count = app_state.final_banks;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count);
+        } else if (app_state.start_time > 0) {
+          // Работает - показываем текущие значения
+          total_seconds = (xTaskGetTickCount() - app_state.start_time) / 100;
+          banks_count = app_state.banks_count;
+          minutes = total_seconds / 60;
+          seconds = total_seconds % 60;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count,
+                   minutes, seconds);
+        } else {
+          // Остановлено - показываем финальные значения
+          total_seconds = app_state.final_time;
+          banks_count = app_state.final_banks;
+          minutes = total_seconds / 60;
+          seconds = total_seconds % 60;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count,
+                   minutes, seconds);
+        }
         if (notification & BTN1_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
           lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000), LV_PART_MAIN);
@@ -230,11 +257,38 @@ void screenTask(void *pvParam) {
       if (xTaskGetTickCount() - lastUpdate >= pdMS_TO_TICKS(1000)) {
         lastUpdate = xTaskGetTickCount();
         char labelText[192];
-        snprintf(labelText, sizeof(labelText),
-                 "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Delta: %ld\nTime: %ld sec",
-                 app_state.encoder, app_state.water_target,
-                 app_state.water_current, app_state.water_delta,
-                 app_state.time);
+        int32_t total_seconds, minutes, seconds, banks_count;
+        
+        if (app_state.counter_error) {
+          // Ошибка счётчика - показываем Err
+          banks_count = app_state.final_banks;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count);
+        } else if (app_state.start_time > 0) {
+          // Работает - показываем текущие значения
+          total_seconds = (xTaskGetTickCount() - app_state.start_time) / 100;
+          banks_count = app_state.banks_count;
+          minutes = total_seconds / 60;
+          seconds = total_seconds % 60;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count,
+                   minutes, seconds);
+        } else {
+          // Остановлено - показываем финальные значения
+          total_seconds = app_state.final_time;
+          banks_count = app_state.final_banks;
+          minutes = total_seconds / 60;
+          seconds = total_seconds % 60;
+          snprintf(labelText, sizeof(labelText),
+                   "Encoder: %ld\nTarget: %ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                   app_state.encoder, app_state.water_target,
+                   app_state.water_current, banks_count,
+                   minutes, seconds);
+        }
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {

@@ -25,6 +25,9 @@ esp_err_t telegram_send_button_press(const char* button_name);
 // Отправка уведомления о состоянии устройства
 esp_err_t telegram_send_device_status(const char* status);
 
+// Отправка отчёта о завершении работы
+esp_err_t telegram_send_completion_report(int32_t banks_count, int32_t total_time_ticks);
+
 #ifdef __cplusplus
 }
 #endif
