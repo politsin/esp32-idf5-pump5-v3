@@ -124,16 +124,30 @@ void screenTask(void *pvParam) {
     lv_obj_set_style_radius(valve_indicators[i], 4, LV_PART_MAIN); // Делаем круглым
     lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Изначально тёмно-серый
     lv_obj_set_style_border_width(valve_indicators[i], 0, LV_PART_MAIN);
-    lv_obj_align(valve_indicators[i], LV_ALIGN_TOP_LEFT, valve_label_x - 15, valve_label_y_start + i * valve_label_y_step + 4);
+    lv_obj_align(valve_indicators[i], LV_ALIGN_TOP_RIGHT, -70, valve_label_y_start + i * valve_label_y_step + 4);
     
     // Создаём label для времени клапана
     valve_labels[i] = lv_label_create(lv_scr_act());
     char txt[16];
-    snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+    snprintf(txt, sizeof(txt), "P%d: %6.2fs", i+1, app_state.valve_times[i] / 100.0f);
     lv_label_set_text(valve_labels[i], txt);
     lv_obj_set_style_text_color(valve_labels[i], lv_color_hex(0x00ffcc), LV_PART_MAIN);
-    lv_obj_align(valve_labels[i], LV_ALIGN_TOP_LEFT, valve_label_x, valve_label_y_start + i * valve_label_y_step);
+    lv_obj_align(valve_labels[i], LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + i * valve_label_y_step);
   }
+
+  // Создаём label для общей суммы времени
+  lv_obj_t *total_time_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(total_time_label, lv_color_hex(0xffff00), LV_PART_MAIN); // Жёлтый цвет для выделения
+  lv_obj_align(total_time_label, LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + 5 * valve_label_y_step + 10);
+  
+  // Инициализируем текст общей суммы
+  uint32_t total_time = 0;
+  for (int i = 0; i < 5; i++) {
+    total_time += app_state.valve_times[i];
+  }
+  char total_txt[32];
+  snprintf(total_txt, sizeof(total_txt), "Total: %6.2fs", total_time / 100.0f);
+  lv_label_set_text(total_time_label, total_txt);
 
   // Перемещаем кнопки вниз экрана в линию
   int btnY_bottom = 100; // Было 120, стало 100 (подняли ещё выше)
@@ -190,16 +204,25 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+            snprintf(txt, sizeof(txt), "P%d: %6.2fs", i+1, app_state.valve_times[i] / 100.0f);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
-            if (app_state.is_on && i + 1 == app_state.valve) {
+            if (app_state.is_on && (i + 1 == app_state.valve || (app_state.valve == 0 && app_state.is_on))) {
               lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x00FF00), LV_PART_MAIN); // Зелёный
             } else {
               lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Тёмно-серый
             }
           }
+          
+          // Обновляем общую сумму времени
+          uint32_t total_time = 0;
+          for (int i = 0; i < 5; i++) {
+            total_time += app_state.valve_times[i];
+          }
+          char total_txt[32];
+          snprintf(total_txt, sizeof(total_txt), "Total: %6.2fs", total_time / 100.0f);
+          lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }
       }
@@ -216,16 +239,25 @@ void screenTask(void *pvParam) {
           lv_label_set_text(label, labelText);
           for (int i = 0; i < 5; i++) {
             char txt[16];
-            snprintf(txt, sizeof(txt), "P%d: %lds", i+1, app_state.valve_times[i]);
+            snprintf(txt, sizeof(txt), "P%d: %6.2fs", i+1, app_state.valve_times[i] / 100.0f);
             lv_label_set_text(valve_labels[i], txt);
             
             // Показываем зелёный кружочек, если клапан активен И помпа работает
-            if (app_state.is_on && i + 1 == app_state.valve) {
+            if (app_state.is_on && (i + 1 == app_state.valve || (app_state.valve == 0 && app_state.is_on))) {
               lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x00FF00), LV_PART_MAIN); // Зелёный
             } else {
               lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN); // Тёмно-серый
             }
           }
+          
+          // Обновляем общую сумму времени
+          uint32_t total_time = 0;
+          for (int i = 0; i < 5; i++) {
+            total_time += app_state.valve_times[i];
+          }
+          char total_txt[32];
+          snprintf(total_txt, sizeof(total_txt), "Total: %6.2fs", total_time / 100.0f);
+          lv_label_set_text(total_time_label, total_txt);
           app_lvgl_unlock();
         }
       } else {

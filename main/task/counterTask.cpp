@@ -203,6 +203,9 @@ void counterTask(void *pvParam) {
         gpio_set_level(VALVE3, 1);
         gpio_set_level(VALVE4, 1);
         gpio_set_level(VALVE5, 1);
+        isOn = true;
+        app_state.is_on = isOn;
+        app_state.valve = 0; // Специальное значение для отображения всех клапанов
         ESP_LOGW(COUNTER_TAG, "Flush!");
       }
       if (notification & BTN_RUN_BIT) {
