@@ -10,6 +10,9 @@ extern "C" {
 // Инициализация Telegram менеджера
 esp_err_t telegram_init(void);
 
+// Тестовая функция для проверки бота
+esp_err_t telegram_test_bot(void);
+
 // Отправка сообщения в Telegram
 esp_err_t telegram_send_message(const char* message);
 

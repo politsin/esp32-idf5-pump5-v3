@@ -37,11 +37,11 @@ app_state_t app_state = {
 
 extern "C" void app_main(void) {
   config_init();
-  esp_log_level_set("wifi", ESP_LOG_WARN);
+  // esp_log_level_set("wifi", ESP_LOG_WARN);
   esp_log_level_set("gpio", ESP_LOG_WARN);
-  // esp_log_level_set("DendoStepper", ESP_LOG_WARN);
   // esp_log_level_set("BUTTON", ESP_LOG_WARN);
   // esp_log_level_set("COUNTER", ESP_LOG_WARN);
+  esp_log_level_set("TFT", ESP_LOG_WARN);
   esp_log_level_set("ENCODER", ESP_LOG_WARN);
   ESP_LOGW(MAINTAG, "Hello world!!");
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;

@@ -30,7 +30,90 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 esp_err_t telegram_init(void)
 {
     ESP_LOGI(TAG, "Telegram manager initialized");
+    
+    // Тестируем бота при инициализации
+    ESP_LOGI(TAG, "Testing bot connection...");
+    esp_err_t test_result = telegram_test_bot();
+    if (test_result == ESP_OK) {
+        ESP_LOGI(TAG, "Bot test passed - ready to send messages");
+    } else {
+        ESP_LOGE(TAG, "Bot test failed - check token and network");
+    }
+    
     return ESP_OK;
+}
+
+// Тестовая функция для проверки бота
+esp_err_t telegram_test_bot(void)
+{
+    ESP_LOGI(TAG, "Testing bot connection...");
+    
+    // Отладочная информация для теста
+    ESP_LOGI(TAG, "Test URL: https://api.telegram.org/bot/%s/getMe", TELEGRAM_BOT_TOKEN);
+    
+    // Настройка HTTP клиента для теста
+    esp_http_client_config_t config = {};
+    config.url = "https://api.telegram.org/bot/" TELEGRAM_BOT_TOKEN "/getMe";
+    config.method = HTTP_METHOD_GET;
+    config.event_handler = http_event_handler;
+    config.timeout_ms = 10000;
+    config.skip_cert_common_name_check = true;
+    config.transport_type = HTTP_TRANSPORT_OVER_SSL;
+    
+    // Отключаем верификацию сертификатов
+    config.cert_pem = NULL;
+    config.client_cert_pem = NULL;
+    config.client_key_pem = NULL;
+    config.cert_len = 0;
+    config.client_cert_len = 0;
+    config.client_key_len = 0;
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP client for test");
+        return ESP_FAIL;
+    }
+
+    // Отправляем запрос
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status_code = esp_http_client_get_status_code(client);
+        ESP_LOGI(TAG, "Test request status: %d", status_code);
+        
+        // Получаем ответ сервера
+        int content_length = esp_http_client_get_content_length(client);
+        ESP_LOGI(TAG, "Response content length: %d", content_length);
+        
+        if (content_length > 0) {
+            char *buffer = (char *)malloc(content_length + 1);
+            if (buffer) {
+                // Сначала получаем заголовки
+                esp_http_client_fetch_headers(client);
+                
+                // Затем читаем тело ответа
+                int read_len = esp_http_client_read_response(client, buffer, content_length);
+                buffer[read_len] = '\0';
+                ESP_LOGI(TAG, "Bot test response: %s", buffer);
+                free(buffer);
+            } else {
+                ESP_LOGE(TAG, "Failed to allocate buffer for response");
+            }
+        } else {
+            ESP_LOGE(TAG, "Empty response from server");
+        }
+        
+        if (status_code == 200) {
+            ESP_LOGI(TAG, "Bot is working correctly!");
+        } else {
+            ESP_LOGE(TAG, "Bot test failed with status %d", status_code);
+            err = ESP_FAIL;
+        }
+    } else {
+        ESP_LOGE(TAG, "Bot test request failed: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+    return err;
 }
 
 // Отправка сообщения в Telegram
@@ -54,14 +137,28 @@ esp_err_t telegram_send_message(const char* message)
         return ESP_FAIL;
     }
 
-    // Настройка HTTP клиента с SSL
+    // Настройка HTTP клиента с SSL без верификации
     esp_http_client_config_t config = {};
     config.url = TELEGRAM_API_URL;
     config.method = HTTP_METHOD_POST;
     config.event_handler = http_event_handler;
     config.timeout_ms = 10000;
     config.skip_cert_common_name_check = true;
-
+    config.transport_type = HTTP_TRANSPORT_OVER_SSL;
+    
+    // Отключаем верификацию сертификатов
+    config.cert_pem = NULL;
+    config.client_cert_pem = NULL;
+    config.client_key_pem = NULL;
+    config.cert_len = 0;
+    config.client_cert_len = 0;
+    config.client_key_len = 0;
+    
+    // Отладочная информация
+    ESP_LOGI(TAG, "Bot Token: %s", TELEGRAM_BOT_TOKEN);
+    ESP_LOGI(TAG, "Chat ID: %s", TELEGRAM_CHAT_ID);
+    ESP_LOGI(TAG, "API URL: %s", TELEGRAM_API_URL);
+    
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
@@ -81,6 +178,27 @@ esp_err_t telegram_send_message(const char* message)
             ESP_LOGI(TAG, "Message sent successfully");
         } else {
             ESP_LOGE(TAG, "HTTP request failed, status: %d", status_code);
+            
+            // Получаем ответ сервера для отладки
+            int content_length = esp_http_client_get_content_length(client);
+            if (content_length > 0) {
+                char *buffer = (char *)malloc(content_length + 1);
+                if (buffer) {
+                    // Сначала получаем заголовки
+                    esp_http_client_fetch_headers(client);
+                    
+                    // Затем читаем тело ответа
+                    int read_len = esp_http_client_read_response(client, buffer, content_length);
+                    buffer[read_len] = '\0';
+                    ESP_LOGE(TAG, "Server response: %s", buffer);
+                    free(buffer);
+                } else {
+                    ESP_LOGE(TAG, "Failed to allocate buffer for server response");
+                }
+            } else {
+                ESP_LOGE(TAG, "Empty server response");
+            }
+            
             err = ESP_FAIL;
         }
     } else {
