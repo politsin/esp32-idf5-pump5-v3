@@ -21,7 +21,7 @@ static EventGroupHandle_t wifi_event_group;
 // Переменные для экспоненциальной задержки переподключения
 static int32_t reconnect_attempts = 0;
 static const int32_t max_reconnect_delay_ms = 15 * 60 * 1000; // 15 минут в миллисекундах
-static const int32_t base_reconnect_delay_ms = 1000; // 1 секунда базовая задержка
+static const int32_t base_reconnect_delay_ms = 5000; // 5 секунд базовая задержка
 
 // Функция для расчёта задержки переподключения
 static int32_t calculate_reconnect_delay(void) {

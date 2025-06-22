@@ -91,7 +91,7 @@ extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "Encoder task created");
   xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
   ESP_LOGI(MAINTAG, "Screen task created");
-  xTaskCreate(telegramTask, "telegram", min * 4, NULL, 5, &telegramTaskHandle);
+  xTaskCreate(telegramTask, "telegram", min * 8, NULL, 5, &telegramTaskHandle);
   ESP_LOGI(MAINTAG, "Telegram task created");
   ESP_LOGI(MAINTAG, "All tasks created successfully");
   // Отправляем уведомление о подключении к WiFi
