@@ -19,7 +19,7 @@ static constexpr Pintype VALVE1 = GPIO_NUM_27;
 #define COUNTER_TAG "COUNTER"
 
 #include "task/screenTask.h"
-#include "../util/telegram_manager.h"
+#include "telegram_manager.h"
 TaskHandle_t counter;
 
 // Объявляем счетчик как глобальную переменную
@@ -577,8 +577,8 @@ void counterTask(void *pvParam) {
             app_state.previous_target = app_config.steps + app_state.encoder;
             app_state.water_target = new_target;
             
-            ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks -> target %ld", 
-                     speed_percent, ticks_per_iteration, new_target);
+            // ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks
+            //  -> target %ld", speed_percent, ticks_per_iteration, new_target);
         }
         last_correction_rot = rot;
       }
