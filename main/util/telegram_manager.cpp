@@ -265,4 +265,23 @@ esp_err_t telegram_send_completion_report(int32_t banks_count, int32_t total_tim
              banks_count, banks_count / 4, hours, minutes, seconds);
     
     return telegram_send_message(message);
+}
+
+// Отправка промежуточного отчёта о прогрессе
+esp_err_t telegram_send_progress_report(int32_t banks_count, int32_t current_time_ticks)
+{
+    char message[512];
+    int32_t current_seconds = current_time_ticks / 100;
+    int32_t minutes = current_seconds / 60;
+    int32_t seconds = current_seconds % 60;
+    
+    snprintf(message, sizeof(message), 
+             "🚰 Налив идёт!\n"
+             "Налито банок: %ld\n"
+             "Расход в литрах: %ld\n"
+             "Время работы: %02ld:%02ld\n"
+             "Льём дальше...",
+             banks_count, banks_count / 4, minutes, seconds);
+    
+    return telegram_send_message(message);
 } 

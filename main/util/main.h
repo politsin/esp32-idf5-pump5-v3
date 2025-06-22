@@ -51,6 +51,7 @@ typedef enum {
   BTN_RUN_BIT = (1 << 11),
   ENCODER_CHANGED_BIT = (1 << 12),
   ENCODER_BTN_BIT = (1 << 13),
+  PROGRESS_REPORT_BIT = (1 << 14),
 } screen_notification_t;
 
 #endif /* APP_MAIN_H_ */

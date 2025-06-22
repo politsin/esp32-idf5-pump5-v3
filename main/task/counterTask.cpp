@@ -59,6 +59,7 @@ static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
 static int32_t last_correction_rot = 0;
 static TickType_t last_correction_time = 0;
 #define CORRECTION_INTERVAL 50
+#define PROGRESS_REPORT_INTERVAL 5 // Отправлять отчёт каждые 5 банок
 static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
 static const int32_t TARGET_ML = 250; // Целевой объём в мл
 
@@ -155,6 +156,12 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             if (current_valve > 5) current_valve = 1;
             app_state.valve = current_valve;
             app_state.banks_count++;
+            
+            // Проверяем, нужно ли отправить промежуточный отчёт
+            if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
+                // Отправляем уведомление задаче для отправки отчёта
+                xTaskNotifyFromISR(counter, PROGRESS_REPORT_BIT, eSetBits, NULL);
+            }
 
             // Открываем новый клапан
             switch (current_valve) {
@@ -492,6 +499,13 @@ void counterTask(void *pvParam) {
                 app_config.steps, app_state.encoder, 
                 app_state.water_target);
         telegram_send_message(message);
+      }
+      if (notification & PROGRESS_REPORT_BIT) {
+        // Отправляем промежуточный отчёт о прогрессе
+        if (app_state.start_time > 0) {
+          int32_t current_time = xTaskGetTickCount() - app_state.start_time;
+          telegram_send_progress_report(app_state.banks_count, current_time);
+        }
       }
     }
     app_state.is_on = isOn;
