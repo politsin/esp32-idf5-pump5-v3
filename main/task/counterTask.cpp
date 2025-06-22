@@ -519,13 +519,15 @@ void counterTask(void *pvParam) {
         
         // Отправляем аварийное сообщение
         char message[512];
-        snprintf(message, sizeof(message), 
-                "🚰 🚨 АВАРИЯ! Счётчик не работает!\n"
-                "Помпа работала 6 секунд, но счётчик увеличился только на %ld\n"
-                "Налито банок: %ld\n"
-                "Время работы: %02ld:%02ld",
-                counter_increase, app_state.banks_count,
-                (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60));
+        snprintf(
+            message, sizeof(message),
+            "🚰 🚨 АВАРИЯ! Счётчик не работает!\n"
+            "Помпа работала 6 секунд, но счётчик увеличился только на %ld\n"
+            "Налито банок: %ld\n"
+            "Расход в литрах: %ld\n"
+            "Время работы: %02ld:%02ld",
+            counter_increase, app_state.banks_count, app_state.banks_count / 4,
+            (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60));
         telegram_send_message(message);
         
         vTaskDelay(pdMS_TO_TICKS(300));

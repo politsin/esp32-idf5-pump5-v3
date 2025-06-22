@@ -137,6 +137,7 @@ esp_err_t telegram_send_message(const char* message)
     // Создаем JSON для отправки
     cJSON *json = cJSON_CreateObject();
     cJSON_AddStringToObject(json, "chat_id", TELEGRAM_CHAT_ID);
+    cJSON_AddStringToObject(json, "message_thread_id", TELEGRAM_MESSAGE_THREAD_ID);
     cJSON_AddStringToObject(json, "text", full_message);
     
     char *json_string = cJSON_Print(json);
@@ -167,6 +168,7 @@ esp_err_t telegram_send_message(const char* message)
     // Отладочная информация
     ESP_LOGI(TAG, "Bot Token: %s", TELEGRAM_BOT_TOKEN);
     ESP_LOGI(TAG, "Chat ID: %s", TELEGRAM_CHAT_ID);
+    ESP_LOGI(TAG, "Message Thread ID: %s", TELEGRAM_MESSAGE_THREAD_ID);
     ESP_LOGI(TAG, "API URL: %s", TELEGRAM_API_URL);
     
     esp_http_client_handle_t client = esp_http_client_init(&config);
