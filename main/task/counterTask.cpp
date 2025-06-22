@@ -82,12 +82,15 @@ static int32_t calculate_correction_ticks(int speed_percent) {
         return 0; // Нормальная скорость - без коррекции
     }
     
+    // Получаем текущую базовую цель с учётом энкодера
+    int32_t current_base_target = app_config.steps + app_state.encoder;
+    
     // При скорости 50% target должен быть 988 тиков
-    // За 21 корректировку: (1075-988)/21 = 87/21 = 4 тика за корректировку
+    // За 21 корректировку: (current_base_target-988)/21 тиков за корректировку
     // При скорости 50% вычитаем 4 тика за корректировку
     int32_t persent = 88;
-    int32_t target_correction = BASE_TARGET * persent / 100;
-    int32_t ticks_per_iteration = (BASE_TARGET - target_correction) / (BASE_TARGET / CORRECTION_INTERVAL);
+    int32_t target_correction = current_base_target * persent / 100;
+    int32_t ticks_per_iteration = (current_base_target - target_correction) / (current_base_target / CORRECTION_INTERVAL);
     
     // Пропорционально для других скоростей (чем больше скорость, тем меньше коррекция)
     float speed_ratio = (100.0f - speed_percent) / 50.0f; // относительно 50%
@@ -100,7 +103,7 @@ static void init_speed_correction_array() {
     for (int speed = 30; speed <= 100; speed++) {
         int32_t correction = calculate_correction_ticks(speed);
         speed_correction_ticks[speed - 30] = correction;
-        ESP_LOGW(COUNTER_TAG, "Speed %d%% -> correction %ld ticks", speed, correction);
+        // ESP_LOGW(COUNTER_TAG, "Speed %d%% -> correction %ld ticks", speed, correction);
     }
 }
 
@@ -172,7 +175,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             last_correction_time = xTaskGetTickCount();
             
             // Сброс target для нового клапана
-            valve_targets[current_valve - 1] = app_config.steps;
+            valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
             
             // Сброс накопленных перелитых тиков для нового клапана
             accumulated_overpoured_ticks[current_valve - 1] = 0;
@@ -227,15 +230,15 @@ void counterTask(void *pvParam) {
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
-  app_state.water_target = app_config.steps;
+  app_state.water_target = app_config.steps + app_state.encoder;
   
   // Инициализируем массив целей для каждого клапана
   for (int i = 0; i < 5; i++) {
-    valve_targets[i] = app_config.steps;
+    valve_targets[i] = app_config.steps + app_state.encoder;
   }
   
   // Инициализируем previous_target базовым значением из настроек
-  app_state.previous_target = app_config.steps;
+  app_state.previous_target = app_config.steps + app_state.encoder;
   
   // Инициализируем массив коррекций скоростей
   init_speed_correction_array();
@@ -452,6 +455,11 @@ void counterTask(void *pvParam) {
           int32_t total_time = xTaskGetTickCount() - app_state.start_time;
           app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
           app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
+          
+          // Отправляем уведомление о нажатии STOP с иконкой
+          telegram_send_button_press_with_icon("🔴", "STOP");
+          
+          // Отправляем полный отчёт
           telegram_send_completion_report(app_state.banks_count, total_time);
         }
         app_state.start_time = 0; // Останавливаем время
@@ -545,7 +553,8 @@ void counterTask(void *pvParam) {
       
       if (total_valve_time > 0.1f) { // чтобы не было деления на ноль
         // Рассчитываем текущую скорость налива
-        float current_speed_ml_per_second = (rot * TARGET_ML) / (BASE_TARGET * total_valve_time);
+        int32_t current_base_target = app_config.steps + app_state.encoder;
+        float current_speed_ml_per_second = (rot * TARGET_ML) / (current_base_target * total_valve_time);
         
         // Коррекция цели на основе скорости потока
         if (current_speed_ml_per_second < NORMAL_SPEED_ML_PER_SECOND) {
@@ -565,7 +574,7 @@ void counterTask(void *pvParam) {
             valve_targets[current_valve - 1] = new_target;
             
             // Обновляем previous_target для отображения на экране (базовый target из настроек)
-            app_state.previous_target = app_config.steps;
+            app_state.previous_target = app_config.steps + app_state.encoder;
             app_state.water_target = new_target;
             
             ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks -> target %ld", 

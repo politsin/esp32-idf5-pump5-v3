@@ -46,19 +46,19 @@ static void on_button(button_t *btn, button_state_t state) {
       ESP_LOGI(BUTTON_TAG, "STOP CLICK");
       xTaskNotify(screen, BTN_STOP_BIT, eSetBits);
       xTaskNotify(counter, BTN_STOP_BIT, eSetBits);
-      telegram_send_button_press("STOP");
+      // Отчёт с информацией о банках отправляется в counterTask
     }
     if (btn == &btn_flush) {
       ESP_LOGI(BUTTON_TAG, "FLUSH CLICK");
       xTaskNotify(screen, BTN_FLUSH_BIT, eSetBits);
       xTaskNotify(counter, BTN_FLUSH_BIT, eSetBits);
-      telegram_send_button_press("FLUSH");
+      telegram_send_button_press_with_icon("🚿", "FLUSH");
     }
     if (btn == &btn_run) {
       ESP_LOGI(BUTTON_TAG, "RUN CLICK");
       xTaskNotify(screen, BTN_RUN_BIT, eSetBits);
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
-      telegram_send_button_press("RUN");
+      telegram_send_button_press_with_icon("🟢", "START");
     }
     if (btn == &btn1) {
       ESP_LOGI(BUTTON_TAG, "Btn1 CLICK");

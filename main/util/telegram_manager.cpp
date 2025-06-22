@@ -220,8 +220,8 @@ esp_err_t telegram_send_message(const char* message)
 // Отправка уведомления о подключении к WiFi
 esp_err_t telegram_send_wifi_connected(void)
 {
-    const char* message = "Наливайка подключилась к WiFi сети";
-    return telegram_send_message(message);
+  const char *message = "🫵 Наливайка подключилась к WiFi сети";
+  return telegram_send_message(message);
 }
 
 // Отправка уведомления о нажатии кнопки
@@ -229,6 +229,14 @@ esp_err_t telegram_send_button_press(const char* button_name)
 {
     char message[256];
     snprintf(message, sizeof(message), "Нажата кнопка: %s", button_name);
+    return telegram_send_message(message);
+}
+
+// Отправка уведомления о нажатии кнопки с иконкой
+esp_err_t telegram_send_button_press_with_icon(const char* icon, const char* button_name)
+{
+    char message[256];
+    snprintf(message, sizeof(message), "%s Нажата кнопка: %s", icon, button_name);
     return telegram_send_message(message);
 }
 
@@ -252,8 +260,9 @@ esp_err_t telegram_send_completion_report(int32_t banks_count, int32_t total_tim
     snprintf(message, sizeof(message), 
              "🏁 Работа завершена!\n"
              "Налито банок: %ld\n"
+             "Расход в литрах: %ld\n"
              "Время работы: %02ld:%02ld:%02ld",
-             banks_count, hours, minutes, seconds);
+             banks_count, banks_count / 4, hours, minutes, seconds);
     
     return telegram_send_message(message);
 } 

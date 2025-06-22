@@ -22,6 +22,9 @@ esp_err_t telegram_send_wifi_connected(void);
 // Отправка уведомления о нажатии кнопки
 esp_err_t telegram_send_button_press(const char* button_name);
 
+// Отправка уведомления о нажатии кнопки с иконкой
+esp_err_t telegram_send_button_press_with_icon(const char* icon, const char* button_name);
+
 // Отправка уведомления о состоянии устройства
 esp_err_t telegram_send_device_status(const char* status);
 

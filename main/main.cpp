@@ -61,6 +61,8 @@ extern "C" void app_main(void) {
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
+  
+
 
   // tasks.
   // i2c_init(true);
@@ -75,6 +77,10 @@ extern "C" void app_main(void) {
   xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
   xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
   ESP_LOGI(MAINTAG, "All tasks created successfully");
+  // Отправляем уведомление о подключении к WiFi
+  const TickType_t xBlockTime = pdMS_TO_TICKS(5 * 1000);
+  vTaskDelay(xBlockTime);
+  telegram_send_wifi_connected();
   // xTaskCreatePinnedToCore(uartTask, "uart", min * 10, NULL, 1, &uart, 0);
   // xTaskCreate(hx711Task, "hx711", min * 16, NULL, 1, &hx711);
   // xTaskCreate(i2cScanTask, "i2cScan", min * 4, NULL, 5, &i2cScan);
