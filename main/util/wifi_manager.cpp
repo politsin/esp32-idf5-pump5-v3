@@ -81,6 +81,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     
     // Очищаем очередь Telegram при подключении к WiFi
     telegram_clear_queue();
+    
+    // Отправляем уведомление о подключении к WiFi
+    telegram_send_wifi_connected();
   }
 }
 

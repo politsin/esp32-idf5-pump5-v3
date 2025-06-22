@@ -62,12 +62,17 @@ extern "C" void app_main(void) {
 
   // Инициализация WiFi
   ESP_LOGI(MAINTAG, "Starting WiFi initialization...");
-  esp_err_t wifi_result = wifi_init();
-  if (wifi_result != ESP_OK) {
-    ESP_LOGE(MAINTAG, "WiFi initialization failed, but continuing...");
-  } else {
-    ESP_LOGI(MAINTAG, "WiFi initialization successful");
-  }
+  // Запускаем WiFi инициализацию в отдельной задаче, чтобы не блокировать основной поток
+  xTaskCreate([](void* param) {
+    esp_err_t wifi_result = wifi_init();
+    if (wifi_result != ESP_OK) {
+      ESP_LOGE(MAINTAG, "WiFi initialization failed, but continuing...");
+    } else {
+      ESP_LOGI(MAINTAG, "WiFi initialization successful");
+    }
+    vTaskDelete(NULL);
+  }, "wifi_init", 4096, NULL, 1, NULL);
+  ESP_LOGI(MAINTAG, "WiFi initialization task created");
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
@@ -99,8 +104,8 @@ extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "Waiting 5 seconds...");
   vTaskDelay(xBlockTime);
   ESP_LOGI(MAINTAG, "5 seconds passed");
-  telegram_send_wifi_connected();
-  ESP_LOGI(MAINTAG, "WiFi connected notification sent");
+  // telegram_send_wifi_connected(); // Уведомление будет отправлено автоматически при подключении к WiFi
+  ESP_LOGI(MAINTAG, "WiFi connected notification will be sent automatically");
   // xTaskCreatePinnedToCore(uartTask, "uart", min * 10, NULL, 1, &uart, 0);
   // xTaskCreate(hx711Task, "hx711", min * 16, NULL, 1, &hx711);
   // xTaskCreate(i2cScanTask, "i2cScan", min * 4, NULL, 5, &i2cScan);
