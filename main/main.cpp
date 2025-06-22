@@ -19,6 +19,7 @@
 #include "task/encoderTask.h"
 #include "task/screenTask.h"
 #include "task/uartTask.h"
+#include "task/telegramTask.h"
 
 #include "i2cdev.h"
 #include "util/i2c.h"
@@ -43,7 +44,10 @@ app_state_t app_state = {
 };
 
 extern "C" void app_main(void) {
+  ESP_LOGI(MAINTAG, "=== APP MAIN STARTED ===");
   config_init();
+  ESP_LOGI(MAINTAG, "Config initialized");
+  
   esp_log_level_set("wifi", ESP_LOG_ERROR);
   esp_log_level_set("wifi_init", ESP_LOG_WARN);
   esp_log_level_set("WIFI_MANAGER", ESP_LOG_WARN);
@@ -57,7 +61,13 @@ extern "C" void app_main(void) {
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
 
   // Инициализация WiFi
-  ESP_ERROR_CHECK(wifi_init());
+  ESP_LOGI(MAINTAG, "Starting WiFi initialization...");
+  esp_err_t wifi_result = wifi_init();
+  if (wifi_result != ESP_OK) {
+    ESP_LOGE(MAINTAG, "WiFi initialization failed, but continuing...");
+  } else {
+    ESP_LOGI(MAINTAG, "WiFi initialization successful");
+  }
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
@@ -69,21 +79,32 @@ extern "C" void app_main(void) {
   // ESP_ERROR_CHECK(i2cdev_init());
   ESP_LOGI(MAINTAG, "Creating tasks...");
   xTaskCreate(&loop, "loop", min * 3, NULL, 2, NULL);
+  ESP_LOGI(MAINTAG, "Loop task created");
   // xTaskCreate(stepperTask, "stepper", min * 8, NULL, 1, &stepper);
   // xTaskCreate(tofTask, "tof", min * 32, NULL, 1, &tof);
   // xTaskCreate(blinkTask, "blink", min * 4, NULL, 1, &blink);
   xTaskCreate(buttonTask, "button", min * 4, NULL, 1, &button);
+  ESP_LOGI(MAINTAG, "Button task created");
   xTaskCreate(counterTask, "counter", min * 10, NULL, 1, &counter);
+  ESP_LOGI(MAINTAG, "Counter task created");
   xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
+  ESP_LOGI(MAINTAG, "Encoder task created");
   xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
+  ESP_LOGI(MAINTAG, "Screen task created");
+  xTaskCreate(telegramTask, "telegram", min * 4, NULL, 5, &telegramTaskHandle);
+  ESP_LOGI(MAINTAG, "Telegram task created");
   ESP_LOGI(MAINTAG, "All tasks created successfully");
   // Отправляем уведомление о подключении к WiFi
   const TickType_t xBlockTime = pdMS_TO_TICKS(5 * 1000);
+  ESP_LOGI(MAINTAG, "Waiting 5 seconds...");
   vTaskDelay(xBlockTime);
+  ESP_LOGI(MAINTAG, "5 seconds passed");
   telegram_send_wifi_connected();
+  ESP_LOGI(MAINTAG, "WiFi connected notification sent");
   // xTaskCreatePinnedToCore(uartTask, "uart", min * 10, NULL, 1, &uart, 0);
   // xTaskCreate(hx711Task, "hx711", min * 16, NULL, 1, &hx711);
   // xTaskCreate(i2cScanTask, "i2cScan", min * 4, NULL, 5, &i2cScan);
+  ESP_LOGI(MAINTAG, "=== APP MAIN FINISHED ===");
 }
 
 // Loop Task

@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 #include "wifi_config.h"
 #include "telegram_manager.h"
+#include "../task/telegramTask.h"
 
 static const char *TAG = "WIFI_MANAGER";
 
@@ -16,6 +17,27 @@ static const char *TAG = "WIFI_MANAGER";
 static EventGroupHandle_t wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
+
+// Переменные для экспоненциальной задержки переподключения
+static int32_t reconnect_attempts = 0;
+static const int32_t max_reconnect_delay_ms = 15 * 60 * 1000; // 15 минут в миллисекундах
+static const int32_t base_reconnect_delay_ms = 1000; // 1 секунда базовая задержка
+
+// Функция для расчёта задержки переподключения
+static int32_t calculate_reconnect_delay(void) {
+    // Экспоненциальная задержка: base_delay * 2^attempts
+    // Но не больше max_reconnect_delay_ms
+    int32_t delay = base_reconnect_delay_ms;
+    for (int i = 0; i < reconnect_attempts && delay < max_reconnect_delay_ms; i++) {
+        delay *= 2;
+    }
+    
+    if (delay > max_reconnect_delay_ms) {
+        delay = max_reconnect_delay_ms;
+    }
+    
+    return delay;
+}
 
 // Обработчик событий WiFi
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
@@ -25,14 +47,40 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    ESP_LOGI(TAG, "Disconnected from AP");
-    esp_wifi_connect();
+    ESP_LOGI(TAG, "Disconnected from AP, attempt %ld", reconnect_attempts + 1);
+    
+    // Рассчитываем задержку перед переподключением
+    int32_t delay_ms = calculate_reconnect_delay();
+    ESP_LOGI(TAG, "Reconnecting in %ld ms (attempt %ld)", delay_ms, reconnect_attempts + 1);
+    
+    // Увеличиваем счётчик попыток
+    reconnect_attempts++;
+    
+    // Очищаем бит подключения
     xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    
+    // Создаём задачу для переподключения с задержкой
+    xTaskCreate([](void* param) {
+        vTaskDelay(pdMS_TO_TICKS(*(int32_t*)param));
+        esp_wifi_connect();
+        vTaskDelete(NULL);
+    }, "wifi_reconnect", 2048, &delay_ms, 5, NULL);
+    
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", WIFI_SSID, WIFI_PASSWORD);
+    
+    // Сбрасываем счётчик попыток при успешном подключении
+    if (reconnect_attempts > 0) {
+        ESP_LOGI(TAG, "WiFi reconnected after %ld attempts", reconnect_attempts);
+        reconnect_attempts = 0;
+    }
+    
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    
+    // Очищаем очередь Telegram при подключении к WiFi
+    telegram_clear_queue();
   }
 }
 
@@ -69,9 +117,11 @@ esp_err_t wifi_init(void) {
 
   ESP_LOGI(TAG, "wifi_init finished.");
 
+  // Ждём подключения к WiFi с таймаутом 10 секунд
+  const TickType_t wifi_timeout = pdMS_TO_TICKS(10000);
   EventBits_t bits =
       xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                          pdFALSE, pdFALSE, portMAX_DELAY);
+                          pdFALSE, pdFALSE, wifi_timeout);
 
   if (bits & WIFI_CONNECTED_BIT) {
     ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", WIFI_SSID,
@@ -82,8 +132,8 @@ esp_err_t wifi_init(void) {
              WIFI_PASSWORD);
     return ESP_FAIL;
   } else {
-    ESP_LOGE(TAG, "UNEXPECTED EVENT");
-    return ESP_FAIL;
+    ESP_LOGW(TAG, "WiFi connection timeout after 10 seconds, continuing anyway");
+    return ESP_OK; // Возвращаем OK, чтобы программа продолжала работать
   }
 }
 

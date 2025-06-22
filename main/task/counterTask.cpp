@@ -59,7 +59,7 @@ static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
 static int32_t last_correction_rot = 0;
 static TickType_t last_correction_time = 0;
 #define CORRECTION_INTERVAL 50
-#define PROGRESS_REPORT_INTERVAL 5 // Отправлять отчёт каждые 5 банок
+#define PROGRESS_REPORT_INTERVAL 50 // Отправлять отчёт каждые 50 банок
 static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
 static const int32_t TARGET_ML = 250; // Целевой объём в мл
 
