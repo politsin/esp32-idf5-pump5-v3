@@ -2,6 +2,7 @@
 #include "telegram_config.h"
 #include "telegramTask.h"
 #include "esp_log.h"
+#include <main.h>
 
 static const char *TAG = "TELEGRAM_MANAGER";
 
@@ -88,8 +89,11 @@ esp_err_t telegram_send_completion_report(int32_t banks_count, int32_t total_tim
              "🏁 Работа завершена!\n"
              "Налито банок: %ld\n"
              "Расход в литрах: %ld\n"
-             "Время работы: %02ld:%02ld:%02ld",
-             banks_count, banks_count / 4, hours, minutes, seconds);
+             "Время работы: %02ld:%02ld:%02ld\n"
+             "Налито сегодня: %ld банок\n"
+             "Всего налито с момента старта устройства: %ld банок",
+             banks_count, banks_count / 4, hours, minutes, seconds, 
+             app_state.today_banks_count, app_state.total_banks_count);
     
     return telegram_send_message_async(message);
 }
@@ -107,8 +111,11 @@ esp_err_t telegram_send_progress_report(int32_t banks_count, int32_t current_tim
              "Налито банок: %ld\n"
              "Расход в литрах: %ld\n"
              "Время работы: %02ld:%02ld\n"
+             "Налито сегодня: %ld банок\n"
+             "Всего налито с момента старта устройства: %ld банок\n"
              "Льём дальше...",
-             banks_count, banks_count / 4, minutes, seconds);
+             banks_count, banks_count / 4, minutes, seconds, 
+             app_state.today_banks_count, app_state.total_banks_count);
     
     return telegram_send_message_async(message);
 } 

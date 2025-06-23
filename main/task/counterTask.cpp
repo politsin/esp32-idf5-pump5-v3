@@ -157,6 +157,14 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             app_state.valve = current_valve;
             app_state.banks_count++;
             
+            // Обновляем общий счётчик банок и сохраняем в NVS
+            app_state.total_banks_count++;
+            save_total_banks_count(app_state.total_banks_count);
+            
+            // Обновляем дневной счётчик банок и сохраняем в NVS
+            app_state.today_banks_count++;
+            save_today_banks_count(app_state.today_banks_count);
+            
             // Проверяем, нужно ли отправить промежуточный отчёт
             if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
                 // Отправляем уведомление задаче для отправки отчёта
@@ -560,9 +568,12 @@ void counterTask(void *pvParam) {
             "Помпа работала 6 секунд, но счётчик увеличился только на %ld\n"
             "Налито банок: %ld\n"
             "Расход в литрах: %ld\n"
-            "Время работы: %02ld:%02ld",
+            "Время работы: %02ld:%02ld\n"
+            "Налито сегодня: %ld банок\n"
+            "Всего налито с момента старта устройства: %ld банок",
             counter_increase, app_state.banks_count, app_state.banks_count / 4,
-            (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60));
+            (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60), 
+            app_state.today_banks_count, app_state.total_banks_count);
         telegram_send_message(message);
         
         vTaskDelay(pdMS_TO_TICKS(300));

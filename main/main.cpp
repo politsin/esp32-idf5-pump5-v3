@@ -18,8 +18,8 @@
 #include "task/counterTask.h"
 #include "task/encoderTask.h"
 #include "task/screenTask.h"
-#include "task/uartTask.h"
 #include "task/telegramTask.h"
+#include "task/timeTask.h"
 
 #include "i2cdev.h"
 #include "util/i2c.h"
@@ -36,12 +36,16 @@ app_state_t app_state = {
     .valve = 0,
     .valve_times = {0, 0, 0, 0, 0}, // Инициализация времени клапанов
     .banks_count = 0, // Инициализация счётчика банок
+    .total_banks_count = 0, // Инициализация общего счётчика банок
+    .today_banks_count = 0, // Инициализация счётчика банок налитых сегодня
     .start_time = 0, // Инициализация времени старта
     .final_time = 0, // Инициализация финального времени
     .final_banks = 0, // Инициализация финального количества банок
     .counter_error = false, // Инициализация флага ошибки счётчика
     .previous_target = 0, // Инициализация предыдущей цели
 };
+
+extern TaskHandle_t timeTaskHandle;
 
 extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "=== APP MAIN STARTED ===");
@@ -76,8 +80,6 @@ extern "C" void app_main(void) {
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
-  
-
 
   // tasks.
   // i2c_init(true);
@@ -98,6 +100,8 @@ extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "Screen task created");
   xTaskCreate(telegramTask, "telegram", min * 8, NULL, 5, &telegramTaskHandle);
   ESP_LOGI(MAINTAG, "Telegram task created");
+  xTaskCreate(timeTask, "time", min * 10, NULL, 1, &timeTaskHandle);
+  ESP_LOGI(MAINTAG, "Time task created");
   ESP_LOGI(MAINTAG, "All tasks created successfully");
   // Отправляем уведомление о подключении к WiFi
   const TickType_t xBlockTime = pdMS_TO_TICKS(5 * 1000);

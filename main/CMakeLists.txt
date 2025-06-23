@@ -9,6 +9,7 @@ idf_component_register(
     "task/encoderTask.cpp"
     "task/counterTask.cpp"
     "task/telegramTask.cpp"
+    "task/timeTask.cpp"
     # "task/stepperTask.cpp"
     # "task/tofTask.cpp"
     # screen
