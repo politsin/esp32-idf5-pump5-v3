@@ -163,15 +163,6 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
                 xTaskNotifyFromISR(counter, PROGRESS_REPORT_BIT, eSetBits, NULL);
             }
 
-            // Открываем новый клапан
-            switch (current_valve) {
-                case 1: gpio_set_level(VALVE1, 1); break;
-                case 2: gpio_set_level(VALVE2, 1); break;
-                case 3: gpio_set_level(VALVE3, 1); break;
-                case 4: gpio_set_level(VALVE4, 1); break;
-                case 5: gpio_set_level(VALVE5, 1); break;
-            }
-
             // Сброс счётчика и времени старта помпы для защиты от сухого хода
             rot = 0;
             pump_start_counter = 0;
@@ -181,13 +172,35 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             last_correction_rot = 0;
             last_correction_time = xTaskGetTickCount();
             
-            // Сброс target для нового клапана
-            valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
-            
             // Сброс накопленных перелитых тиков для нового клапана
             accumulated_overpoured_ticks[current_valve - 1] = 0;
 
             xTaskNotifyFromISR(screen, UPDATE_BIT, eSetBits, NULL);
+        } else {
+            // Если это начало нового налива (rot == 0), сбрасываем цель на базовое значение
+            if (rot == 0) {
+                valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+            }
+            
+            // Открываем клапан если он ещё не открыт
+            bool valve_is_open = false;
+            switch (current_valve) {
+                case 1: valve_is_open = (gpio_get_level(VALVE1) == 1); break;
+                case 2: valve_is_open = (gpio_get_level(VALVE2) == 1); break;
+                case 3: valve_is_open = (gpio_get_level(VALVE3) == 1); break;
+                case 4: valve_is_open = (gpio_get_level(VALVE4) == 1); break;
+                case 5: valve_is_open = (gpio_get_level(VALVE5) == 1); break;
+            }
+            
+            if (!valve_is_open) {
+                switch (current_valve) {
+                    case 1: gpio_set_level(VALVE1, 1); break;
+                    case 2: gpio_set_level(VALVE2, 1); break;
+                    case 3: gpio_set_level(VALVE3, 1); break;
+                    case 4: gpio_set_level(VALVE4, 1); break;
+                    case 5: gpio_set_level(VALVE5, 1); break;
+                }
+            }
         }
     }
 }
@@ -581,14 +594,14 @@ void counterTask(void *pvParam) {
                 ticks_per_iteration = speed_correction_ticks[speed_percent - 30];
             }
             
-            // Уменьшаем базовый target на фиксированное количество тиков
+            // Уменьшаем текущую цель на фиксированное количество тиков (накапливаем коррекции)
             int32_t new_target = valve_targets[current_valve - 1] - ticks_per_iteration;
             
-            // Каждый раз устанавливаем цель на рассчитанное значение
+            // Устанавливаем скорректированную цель
             valve_targets[current_valve - 1] = new_target;
             
             // Обновляем previous_target для отображения на экране (базовый target из настроек)
-            app_state.previous_target = app_config.steps + app_state.encoder;
+            app_state.previous_target = current_base_target;
             app_state.water_target = new_target;
             
             // ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks
