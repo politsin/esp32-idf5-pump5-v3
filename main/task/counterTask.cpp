@@ -183,31 +183,20 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             // Сброс накопленных перелитых тиков для нового клапана
             accumulated_overpoured_ticks[current_valve - 1] = 0;
 
+            // Открываем новый клапан сразу после переключения
+            switch (current_valve) {
+                case 1: gpio_set_level(VALVE1, 1); break;
+                case 2: gpio_set_level(VALVE2, 1); break;
+                case 3: gpio_set_level(VALVE3, 1); break;
+                case 4: gpio_set_level(VALVE4, 1); break;
+                case 5: gpio_set_level(VALVE5, 1); break;
+            }
+
             xTaskNotifyFromISR(screen, UPDATE_BIT, eSetBits, NULL);
         } else {
             // Если это начало нового налива (rot == 0), сбрасываем цель на базовое значение
             if (rot == 0) {
                 valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
-            }
-            
-            // Открываем клапан если он ещё не открыт
-            bool valve_is_open = false;
-            switch (current_valve) {
-                case 1: valve_is_open = (gpio_get_level(VALVE1) == 1); break;
-                case 2: valve_is_open = (gpio_get_level(VALVE2) == 1); break;
-                case 3: valve_is_open = (gpio_get_level(VALVE3) == 1); break;
-                case 4: valve_is_open = (gpio_get_level(VALVE4) == 1); break;
-                case 5: valve_is_open = (gpio_get_level(VALVE5) == 1); break;
-            }
-            
-            if (!valve_is_open) {
-                switch (current_valve) {
-                    case 1: gpio_set_level(VALVE1, 1); break;
-                    case 2: gpio_set_level(VALVE2, 1); break;
-                    case 3: gpio_set_level(VALVE3, 1); break;
-                    case 4: gpio_set_level(VALVE4, 1); break;
-                    case 5: gpio_set_level(VALVE5, 1); break;
-                }
             }
         }
     }
