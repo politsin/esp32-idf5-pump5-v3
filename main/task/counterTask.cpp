@@ -51,6 +51,9 @@ static bool flush_mode = false;
 // Переменная для отслеживания изменений клапанов
 static int32_t last_valve = 0;
 
+// Переменная для отслеживания последнего сохранённого количества банок
+static int32_t last_banks_count = 0;
+
 // Массив целей для каждого клапана (пока все одинаковые)
 // 1075 - 250 ml
 static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
@@ -114,19 +117,6 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
     app_state.water_current = rot;
 
     if (pumpOn && !flush_mode) {
-        // Инициализация первого клапана при старте
-        if (current_valve == 0) {
-            current_valve = 1;
-            valve_start_time = xTaskGetTickCount();
-            // Убираем лог из ISR - вызывает краш
-            app_state.valve = 1;
-            gpio_set_level(VALVE1, 1);
-            gpio_set_level(VALVE2, 0);
-            gpio_set_level(VALVE3, 0);
-            gpio_set_level(VALVE4, 0);
-            gpio_set_level(VALVE5, 0);
-            return;
-        }
 
         int32_t target = valve_targets[current_valve - 1];
         
@@ -157,13 +147,14 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             app_state.valve = current_valve;
             app_state.banks_count++;
             
-            // Обновляем общий счётчик банок и сохраняем в NVS
-            app_state.total_banks_count++;
-            save_total_banks_count(app_state.total_banks_count);
-            
-            // Обновляем дневной счётчик банок и сохраняем в NVS
-            app_state.today_banks_count++;
-            save_today_banks_count(app_state.today_banks_count);
+            // СРАЗУ открываем новый клапан после переключения
+            switch (current_valve) {
+                case 1: gpio_set_level(VALVE1, 1); break;
+                case 2: gpio_set_level(VALVE2, 1); break;
+                case 3: gpio_set_level(VALVE3, 1); break;
+                case 4: gpio_set_level(VALVE4, 1); break;
+                case 5: gpio_set_level(VALVE5, 1); break;
+            }
             
             // Проверяем, нужно ли отправить промежуточный отчёт
             if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
@@ -182,15 +173,6 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             
             // Сброс накопленных перелитых тиков для нового клапана
             accumulated_overpoured_ticks[current_valve - 1] = 0;
-
-            // Открываем новый клапан сразу после переключения
-            switch (current_valve) {
-                case 1: gpio_set_level(VALVE1, 1); break;
-                case 2: gpio_set_level(VALVE2, 1); break;
-                case 3: gpio_set_level(VALVE3, 1); break;
-                case 4: gpio_set_level(VALVE4, 1); break;
-                case 5: gpio_set_level(VALVE5, 1); break;
-            }
 
             xTaskNotifyFromISR(screen, UPDATE_BIT, eSetBits, NULL);
         } else {
@@ -435,7 +417,7 @@ void counterTask(void *pvParam) {
         pump_start_time = xTaskGetTickCount(); // Запоминаем время старта помпы для защиты
         pump_start_counter = rot; // Запоминаем значение счётчика при старте помпы
         app_state.counter_error = false; // Сбрасываем флаг ошибки счётчика
-        current_valve = 0; // Устанавливаем 0, чтобы первый переключатель открыл клапан 1
+        current_valve = 1; // Устанавливаем 1, чтобы сразу начать с первого клапана
         valve_start_time = xTaskGetTickCount(); // Начинаем отсчёт времени для первого клапана
         // Сбрасываем флаг предупреждения о сухом ходе
         warning_sent = false;
@@ -444,10 +426,20 @@ void counterTask(void *pvParam) {
         // Инициализация переменных для коррекции скорости
         last_correction_rot = 0;
         last_correction_time = xTaskGetTickCount();
+        
+        // СРАЗУ открываем первый клапан при старте
+        app_state.valve = 1;
+        gpio_set_level(VALVE1, 1);
+        gpio_set_level(VALVE2, 0);
+        gpio_set_level(VALVE3, 0);
+        gpio_set_level(VALVE4, 0);
+        gpio_set_level(VALVE5, 0);
+        
+        // Сброс last_banks_count для корректного отслеживания новых банок
+        last_banks_count = 0;
+        
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
-        // НЕ управляем клапанами здесь - только в прерывании!
-        app_state.valve = 1;
       }
       if (notification & BTN_STOP_BIT) {
         ESP_LOGW(COUNTER_TAG, "STOP Emergency!");
@@ -518,6 +510,20 @@ void counterTask(void *pvParam) {
         }
       }
     }
+    
+    // Сохраняем банки в NVS (вынесено из ISR)
+    if (app_state.banks_count > last_banks_count) {
+      // Обновляем общий счётчик банок и сохраняем в NVS
+      app_state.total_banks_count++;
+      save_total_banks_count(app_state.total_banks_count);
+      
+      // Обновляем дневной счётчик банок и сохраняем в NVS
+      app_state.today_banks_count++;
+      save_today_banks_count(app_state.today_banks_count);
+      
+      last_banks_count = app_state.banks_count;
+    }
+    
     app_state.is_on = isOn;
     app_state.water_current = rot;
     
