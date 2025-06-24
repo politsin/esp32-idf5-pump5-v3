@@ -171,6 +171,9 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             last_correction_rot = 0;
             last_correction_time = xTaskGetTickCount();
             
+            // Сброс target на базовое значение для нового клапана
+            valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+            
             // Сброс накопленных перелитых тиков для нового клапана
             accumulated_overpoured_ticks[current_valve - 1] = 0;
 
