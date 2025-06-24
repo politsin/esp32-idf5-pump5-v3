@@ -9,7 +9,7 @@
   },
   "idf.espIdfPathWin": "W:\\soft\\esp\\idf\\v5.3\\esp-idf",
   "idf.openOcdConfigs": ["board/esp32-wrover-kit-3.3v.cfg"],
-  "idf.portWin": "COM16",
+  "idf.portWin": "COM3",
   "idf.pythonBinPathWin": "W:\\soft\\esp\\tools\\python_env\\idf5.3_py3.11_env\\Scripts\\python.exe",
   "idf.toolsPathWin": "W:\\soft\\esp\\tools",
   "idf.flashType": "UART",
