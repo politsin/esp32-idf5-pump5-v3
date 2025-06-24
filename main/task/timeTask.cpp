@@ -9,6 +9,7 @@
 #include <time.h>
 #include "esp_sntp.h"
 #include "esp_wifi.h"
+#include "esp_http_client.h"
 
 #include <main.h>
 #include <config.h>
@@ -20,6 +21,7 @@
 #define TIME_SYNC_INTERVAL_HOURS 1  // Синхронизация времени каждый час
 #define DAILY_REPORT_HOUR 18        // Час для отправки дневного отчёта (18:00)
 #define TIME_CHECK_INTERVAL_MS 60000 // Проверка времени каждую минуту
+#define WIFI_KEEPALIVE_INTERVAL_MINUTES 15 // Интервал активности WiFi (15 минут)
 
 TaskHandle_t timeTaskHandle;
 
@@ -27,6 +29,7 @@ TaskHandle_t timeTaskHandle;
 static time_t last_sync_time = 0;
 static int last_report_day = -1;
 static bool daily_report_sent = false;
+static time_t last_wifi_keepalive = 0; // Время последней активности WiFi
 
 // Функция для синхронизации времени
 static esp_err_t sync_time() {
@@ -123,6 +126,42 @@ static void check_daily_reset() {
     }
 }
 
+// Функция для поддержания активности WiFi
+static esp_err_t wifi_keepalive() {
+    ESP_LOGI(TIME_TAG, "Sending WiFi keepalive...");
+    
+    // Проверяем подключение к WiFi
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+        ESP_LOGW(TIME_TAG, "WiFi not connected, skipping keepalive");
+        return ESP_ERR_WIFI_NOT_CONNECT;
+    }
+    
+    // Отправляем простой HTTP GET запрос к Яндекс DNS для поддержания активности
+    esp_http_client_config_t config = {
+        .url = "http://77.88.8.8/resolve?name=yandex.ru&type=A",
+        .timeout_ms = 5000,
+        .skip_cert_common_name_check = true,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(TIME_TAG, "Failed to initialize HTTP client for keepalive");
+        return ESP_FAIL;
+    }
+    
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status_code = esp_http_client_get_status_code(client);
+        ESP_LOGI(TIME_TAG, "WiFi keepalive successful, HTTP status: %d", status_code);
+    } else {
+        ESP_LOGW(TIME_TAG, "WiFi keepalive failed: %s", esp_err_to_name(err));
+    }
+    
+    esp_http_client_cleanup(client);
+    return err;
+}
+
 void timeTask(void *pvParam) {
     ESP_LOGI(TIME_TAG, "Time task started");
     
@@ -132,6 +171,7 @@ void timeTask(void *pvParam) {
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     last_report_day = timeinfo.tm_yday;
+    last_wifi_keepalive = now; // Инициализируем время последней активности WiFi
     
     const TickType_t xBlockTime = pdMS_TO_TICKS(TIME_CHECK_INTERVAL_MS);
     
@@ -143,6 +183,12 @@ void timeTask(void *pvParam) {
         // Проверяем, нужно ли синхронизировать время (каждый час)
         if (now - last_sync_time >= TIME_SYNC_INTERVAL_HOURS * 3600) {
             sync_time();
+        }
+        
+        // Проверяем, нужно ли отправить keepalive для WiFi (каждые 15 минут)
+        if (now - last_wifi_keepalive >= WIFI_KEEPALIVE_INTERVAL_MINUTES * 60) {
+            wifi_keepalive();
+            last_wifi_keepalive = now;
         }
         
         // Проверяем сброс дневного счётчика

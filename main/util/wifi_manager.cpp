@@ -49,6 +49,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
     ESP_LOGI(TAG, "Disconnected from AP, attempt %ld", reconnect_attempts + 1);
     
+    // Добавляем дополнительную информацию об отключении
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        ESP_LOGI(TAG, "Last known AP: SSID=%s, RSSI=%d", ap_info.ssid, ap_info.rssi);
+    } else {
+        ESP_LOGI(TAG, "No AP info available");
+    }
+    
     // Рассчитываем задержку перед переподключением
     int32_t delay_ms = calculate_reconnect_delay();
     ESP_LOGI(TAG, "Reconnecting in %ld ms (attempt %ld)", delay_ms, reconnect_attempts + 1);
@@ -83,6 +91,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     telegram_clear_queue();
     
     // Отправляем уведомление о подключении к WiFi
+    ESP_LOGI(TAG, "Sending WiFi connected notification...");
     telegram_send_wifi_connected();
   }
 }
