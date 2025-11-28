@@ -34,6 +34,10 @@ esp_err_t i2c_init(bool scan) {
   if (scan) {
     // Try To SCAN
     ESP_ERROR_CHECK(iot_i2c_scan(1));
+    // Освободим драйвер после скана, чтобы i2cdev мог установить свой без конфликтов
+    i2c_driver_delete(I2C_NUM_0);
+    s_inited = false;
+    ESP_LOGI(I2C, "I2C driver released after scan (handover to i2cdev)");
   }
 #else
   ESP_LOGW(IOT, "I2C OFF");
