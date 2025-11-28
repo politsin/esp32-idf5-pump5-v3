@@ -6,11 +6,7 @@
 typedef gpio_num_t Pintype;
 static constexpr Pintype DI = GPIO_NUM_13;
 static constexpr Pintype PUMP = GPIO_NUM_25;
-static constexpr Pintype VALVE5 = GPIO_NUM_17;
-static constexpr Pintype VALVE4 = GPIO_NUM_22;
-static constexpr Pintype VALVE3 = GPIO_NUM_21;
-static constexpr Pintype VALVE2 = GPIO_NUM_26;
-static constexpr Pintype VALVE1 = GPIO_NUM_27;
+// Клапаны перенесены на PCF8575 (P0..P4), GPIO больше не используются
 #include "sdkconfig.h"
 #include <config.h>
 #include <esp_log.h>
@@ -18,6 +14,7 @@ static constexpr Pintype VALVE1 = GPIO_NUM_27;
 #include <rom/gpio.h>
 #define COUNTER_TAG "COUNTER"
 
+#include "../util/pcf8575_io.h"
 #include "task/screenTask.h"
 #include "telegram_manager.h"
 TaskHandle_t counter;
@@ -134,11 +131,11 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             // Убираем отладочный лог из ISR - может вызывать проблемы
             // Закрываем текущий клапан
             switch (current_valve) {
-                case 1: gpio_set_level(VALVE1, 0); break;
-                case 2: gpio_set_level(VALVE2, 0); break;
-                case 3: gpio_set_level(VALVE3, 0); break;
-                case 4: gpio_set_level(VALVE4, 0); break;
-                case 5: gpio_set_level(VALVE5, 0); break;
+                case 1: ioexp_set_valve(1, false); break;
+                case 2: ioexp_set_valve(2, false); break;
+                case 3: ioexp_set_valve(3, false); break;
+                case 4: ioexp_set_valve(4, false); break;
+                case 5: ioexp_set_valve(5, false); break;
             }
 
             // Следующий клапан по кругу
@@ -149,11 +146,11 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             
             // СРАЗУ открываем новый клапан после переключения
             switch (current_valve) {
-                case 1: gpio_set_level(VALVE1, 1); break;
-                case 2: gpio_set_level(VALVE2, 1); break;
-                case 3: gpio_set_level(VALVE3, 1); break;
-                case 4: gpio_set_level(VALVE4, 1); break;
-                case 5: gpio_set_level(VALVE5, 1); break;
+                case 1: ioexp_set_valve(1, true); break;
+                case 2: ioexp_set_valve(2, true); break;
+                case 3: ioexp_set_valve(3, true); break;
+                case 4: ioexp_set_valve(4, true); break;
+                case 5: ioexp_set_valve(5, true); break;
             }
             
             // Проверяем, нужно ли отправить промежуточный отчёт
@@ -196,22 +193,9 @@ void counterTask(void *pvParam) {
 
   gpio_pad_select_gpio(PUMP);
   gpio_set_direction(PUMP, GPIO_MODE_OUTPUT);
-  gpio_pad_select_gpio(VALVE1);
-  gpio_set_direction(VALVE1, GPIO_MODE_OUTPUT);
-  gpio_pad_select_gpio(VALVE2);
-  gpio_set_direction(VALVE2, GPIO_MODE_OUTPUT);
-  gpio_pad_select_gpio(VALVE3);
-  gpio_set_direction(VALVE3, GPIO_MODE_OUTPUT);
-  gpio_pad_select_gpio(VALVE4);
-  gpio_set_direction(VALVE4, GPIO_MODE_OUTPUT);
-  gpio_pad_select_gpio(VALVE5);
-  gpio_set_direction(VALVE5, GPIO_MODE_OUTPUT);
   gpio_set_level(PUMP, 0);
-  gpio_set_level(VALVE1, 0);
-  gpio_set_level(VALVE2, 0);
-  gpio_set_level(VALVE3, 0);
-  gpio_set_level(VALVE4, 0);
-  gpio_set_level(VALVE5, 0);
+  // Все клапаны выключены через PCF8575
+  ioexp_set_all_valves(false);
 
   // Verify that the GPIO ISR service is installed
   gpio_install_isr_service(0);
@@ -277,11 +261,7 @@ void counterTask(void *pvParam) {
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         
         // СРАЗУ открываем все клапаны в самом начале
-        gpio_set_level(VALVE1, 1);
-        gpio_set_level(VALVE2, 1);
-        gpio_set_level(VALVE3, 1);
-        gpio_set_level(VALVE4, 1);
-        gpio_set_level(VALVE5, 1);
+        ioexp_set_all_valves(true);
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
@@ -299,11 +279,11 @@ void counterTask(void *pvParam) {
             
             // Открываем нужный клапан
             switch (valve) {
-              case 1: gpio_set_level(VALVE1, 1); break;
-              case 2: gpio_set_level(VALVE2, 1); break;
-              case 3: gpio_set_level(VALVE3, 1); break;
-              case 4: gpio_set_level(VALVE4, 1); break;
-              case 5: gpio_set_level(VALVE5, 1); break;
+              case 1: ioexp_set_valve(1, true); break;
+              case 2: ioexp_set_valve(2, true); break;
+              case 3: ioexp_set_valve(3, true); break;
+              case 4: ioexp_set_valve(4, true); break;
+              case 5: ioexp_set_valve(5, true); break;
             }
             
             app_state.valve = valve;
@@ -322,11 +302,11 @@ void counterTask(void *pvParam) {
             
             // Закрываем клапан
             switch (valve) {
-              case 1: gpio_set_level(VALVE1, 0); break;
-              case 2: gpio_set_level(VALVE2, 0); break;
-              case 3: gpio_set_level(VALVE3, 0); break;
-              case 4: gpio_set_level(VALVE4, 0); break;
-              case 5: gpio_set_level(VALVE5, 0); break;
+              case 1: ioexp_set_valve(1, false); break;
+              case 2: ioexp_set_valve(2, false); break;
+              case 3: ioexp_set_valve(3, false); break;
+              case 4: ioexp_set_valve(4, false); break;
+              case 5: ioexp_set_valve(5, false); break;
             }
             
             app_state.valve = 0; // Клапан закрыт
@@ -346,11 +326,7 @@ void counterTask(void *pvParam) {
         }
         
         // В конце промывки ещё на 2 секунды открываем все клапаны
-        gpio_set_level(VALVE1, 1);
-        gpio_set_level(VALVE2, 1);
-        gpio_set_level(VALVE3, 1);
-        gpio_set_level(VALVE4, 1);
-        gpio_set_level(VALVE5, 1);
+        ioexp_set_all_valves(true);
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
@@ -366,11 +342,7 @@ void counterTask(void *pvParam) {
         }
         
         // Закрываем все клапаны и выключаем помпу
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
+        ioexp_set_all_valves(false);
         gpio_set_level(PUMP, 0);
         isOn = false;
         pumpOn = false;
@@ -386,11 +358,7 @@ void counterTask(void *pvParam) {
         
         flush_stopped:
         // Обработка остановки промывки
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
+        ioexp_set_all_valves(false);
         gpio_set_level(PUMP, 0);
         isOn = false;
         pumpOn = false;
@@ -432,11 +400,11 @@ void counterTask(void *pvParam) {
         
         // СРАЗУ открываем первый клапан при старте
         app_state.valve = 1;
-        gpio_set_level(VALVE1, 1);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
+        ioexp_set_valve(1, true);
+        ioexp_set_valve(2, false);
+        ioexp_set_valve(3, false);
+        ioexp_set_valve(4, false);
+        ioexp_set_valve(5, false);
         
         // Сброс last_banks_count для корректного отслеживания новых банок
         last_banks_count = 0;
@@ -450,11 +418,7 @@ void counterTask(void *pvParam) {
         rot = 0;
         isOn = false;
         pumpOn = false;
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
+        ioexp_set_all_valves(false);
         app_state.valve = 0;
         current_valve = 0;
         valve_start_time = 0;
@@ -549,11 +513,7 @@ void counterTask(void *pvParam) {
         app_state.rock = false;
         isOn = false;
         pumpOn = false;
-        gpio_set_level(VALVE1, 0);
-        gpio_set_level(VALVE2, 0);
-        gpio_set_level(VALVE3, 0);
-        gpio_set_level(VALVE4, 0);
-        gpio_set_level(VALVE5, 0);
+        ioexp_set_all_valves(false);
         app_state.valve = 0;
         current_valve = 0;
         valve_start_time = 0;

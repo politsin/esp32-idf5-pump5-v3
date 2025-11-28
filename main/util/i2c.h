@@ -8,6 +8,13 @@
 extern TaskHandle_t i2cScan;
 void i2cScanTask(void *pvParam);
 
+#ifndef I2C_SDA
+#define I2C_SDA GPIO_NUM_21
+#endif
+#ifndef I2C_SCL
+#define I2C_SCL GPIO_NUM_22
+#endif
+
 esp_err_t i2c_init(bool scan);
 esp_err_t iot_i2c_scan(uint8_t i2c_scan_count);
 

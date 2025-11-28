@@ -7,25 +7,30 @@
 #define I2C "I2C"
 #define CONFIG_IOT_I2C "1"
 #define CONFIG_IOT_I2C_SCAN "1"
-#define I2C_SDA GPIO_NUM_26
-#define I2C_SCL GPIO_NUM_27
 
 #include "i2c.h"
 
 esp_err_t i2c_init(bool scan) {
 #ifdef CONFIG_IOT_I2C
+  static bool s_inited = false;
+  if (s_inited) {
+    ESP_LOGI(I2C, "I2C already initialized");
+    if (scan) ESP_ERROR_CHECK(iot_i2c_scan(1));
+    return ESP_OK;
+  }
   ESP_LOGI(I2C, "I2C init. SDA=%d SCL=%d", I2C_SDA, I2C_SCL);
-  i2c_config_t conf;
+  i2c_config_t conf = {};
   conf.mode = I2C_MODE_MASTER;
   conf.sda_io_num = I2C_SDA;
   conf.scl_io_num = I2C_SCL;
-  conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+  conf.sda_pullup_en = GPIO_PULLUP_ENABLE; // используем внешние подтяжки на шине
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.clk_flags = 0;
-  conf.master.clk_speed = 100000;
+  conf.master.clk_speed = 400000; // 400 кГц, совпадает с esp-idf-lib (pcf8575)
   i2c_param_config(I2C_NUM_0, &conf);
-  i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0);
+  ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
   ESP_LOGI(I2C, "I2C init OK");
+  s_inited = true;
   if (scan) {
     // Try To SCAN
     ESP_ERROR_CHECK(iot_i2c_scan(1));

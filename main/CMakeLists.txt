@@ -22,7 +22,8 @@ idf_component_register(
     "util/nvsInit.cpp"
     "util/wifi_manager.cpp"
     "util/telegram_manager.cpp"
-    # "util/i2c.cpp"
+    "util/i2c.cpp"
+    "util/pcf8575_io.cpp"
   INCLUDE_DIRS 
     "."
     "util"
@@ -37,5 +38,6 @@ idf_component_register(
     esp_lcd
     button
     i2cdev
+    pcf8575
     esp32-c3-rotary-encoder
 )

@@ -23,6 +23,7 @@ typedef gpio_num_t Pintype;
 #include "screenTask.h" // Добавили заголовок для screenTask
 #include <buttonTask.h>
 #include "../util/telegram_manager.h"
+#include "../util/pcf8575_io.h"
 
 static const char *states[] = {
     [BUTTON_PRESSED] = "pressed",
@@ -34,6 +35,14 @@ static const char *states[] = {
 static button_t btn1, btn2, btn_stop, btn_flush, btn_run;
 TaskHandle_t button;
 // mqttMessage eventMessage;
+static SemaphoreHandle_t pcf_int_sem;
+static bool last_stop = false, last_flush = false, last_run = false;
+
+static void IRAM_ATTR pcf_int_isr(void* arg) {
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  if (pcf_int_sem) xSemaphoreGiveFromISR(pcf_int_sem, &xHigherPriorityTaskWoken);
+  if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
+}
 static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
@@ -98,43 +107,44 @@ void buttonTask(void *pvParam) {
   // Second button connected between GPIO and +3.3V
   // pressed logic level 1, autorepeat enabled
   btn2.gpio = BUTTON_PIN2;
-  btn2.pressed_level = 0;
-  btn2.internal_pull = true;
+  btn2.pressed_level = 1;
+  btn2.internal_pull = false; // GPIO35: нет внутренних подтяжек
   btn2.autorepeat = false;
   btn2.callback = on_button;
 
-  // STOP button
-  btn_stop.gpio = BUTTON_STOP;
-  btn_stop.pressed_level = 0;
-  btn_stop.internal_pull = true;
-  btn_stop.autorepeat = true;
+  // STOP/FLUSH/RUN теперь читаем через PCF8575 (виртуальные кнопки)
   btn_stop.callback = on_button;
-
-  // FLUSH button
-  btn_flush.gpio = BUTTON_FLUSH;
-  btn_flush.pressed_level = 0;
-  btn_flush.internal_pull = true;
-  btn_flush.autorepeat = false;
   btn_flush.callback = on_button;
-
-  // RUN button
-  btn_run.gpio = BUTTON_RUN;
-  btn_run.pressed_level = 0;
-  btn_run.internal_pull = true;
-  btn_run.autorepeat = false;
   btn_run.callback = on_button;
 
   ESP_ERROR_CHECK(button_init(&btn1));
   ESP_ERROR_CHECK(button_init(&btn2));
-  ESP_ERROR_CHECK(button_init(&btn_stop));
-  ESP_ERROR_CHECK(button_init(&btn_flush));
-  ESP_ERROR_CHECK(button_init(&btn_run));
+  // Не инициализируем btn_stop/btn_flush/btn_run через GPIO-библиотеку
 
-  const TickType_t xBlockTime = pdMS_TO_TICKS(9999 * 1000);
+  // Настраиваем прерывание от PCF8575 INT
+  gpio_install_isr_service(0);
+  pcf_int_sem = xSemaphoreCreateBinary();
+  gpio_reset_pin(PCF8575_INT_GPIO);
+  gpio_set_direction(PCF8575_INT_GPIO, GPIO_MODE_INPUT);
+  gpio_set_intr_type(PCF8575_INT_GPIO, GPIO_INTR_NEGEDGE);
+  gpio_isr_handler_add(PCF8575_INT_GPIO, pcf_int_isr, NULL);
+
+  const TickType_t xBlockTime = pdMS_TO_TICKS(50);
   while (true) {
-    vTaskDelay(xBlockTime);
-    if (true) {
-      ESP_LOGW(BUTTON_TAG, "button!");
+    // Ждём событие от INT или таймаут (для страховки/дребезга)
+    if (pcf_int_sem) (void)xSemaphoreTake(pcf_int_sem, xBlockTime);
+    // Небольшая задержка для подавления дребезга
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    bool stop_p = false, flush_p = false, run_p = false;
+    if (ioexp_read_buttons(&stop_p, &flush_p, &run_p) == ESP_OK) {
+      // Генерация CLICK по фронту нажатия (релиз->нажатие)
+      if (stop_p && !last_stop)  on_button(&btn_stop, BUTTON_CLICKED);
+      if (flush_p && !last_flush) on_button(&btn_flush, BUTTON_CLICKED);
+      if (run_p && !last_run)    on_button(&btn_run, BUTTON_CLICKED);
+      last_stop = stop_p;
+      last_flush = flush_p;
+      last_run = run_p;
     }
   }
 }

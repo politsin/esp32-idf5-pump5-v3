@@ -23,6 +23,7 @@
 
 #include "i2cdev.h"
 #include "util/i2c.h"
+#include "util/pcf8575_io.h"
 
 app_state_t app_state = {
     .is_on = false,
@@ -64,6 +65,16 @@ extern "C" void app_main(void) {
   ESP_LOGW(MAINTAG, "Hello world!!");
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
 
+  // ИНИЦИАЛИЗАЦИЯ I2C ДО ВСЕХ ТАСКОВ (и до WiFi/Telegram)
+  i2c_init(true);
+  ESP_ERROR_CHECK(i2cdev_init());
+  {
+    esp_err_t err = ioexp_init();
+    if (err != ESP_OK) {
+      ESP_LOGE(MAINTAG, "PCF8575 init failed (0x%x). Продолжаем без расширителя.", (unsigned)err);
+    }
+  }
+
   // Инициализация WiFi
   ESP_LOGI(MAINTAG, "Starting WiFi initialization...");
   // Запускаем WiFi инициализацию в отдельной задаче, чтобы не блокировать основной поток
@@ -82,8 +93,6 @@ extern "C" void app_main(void) {
   ESP_ERROR_CHECK(telegram_init());
 
   // tasks.
-  // i2c_init(true);
-  // ESP_ERROR_CHECK(i2cdev_init());
   ESP_LOGI(MAINTAG, "Creating tasks...");
   xTaskCreate(&loop, "loop", min * 3, NULL, 2, NULL);
   ESP_LOGI(MAINTAG, "Loop task created");

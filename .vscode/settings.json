@@ -1,17 +1,20 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.adapterTargetName": "esp32",
-  "idf.customExtraPaths": "W:\\soft\\esp\\tools\\tools\\xtensa-esp-elf-gdb\\14.2_20240403\\xtensa-esp-elf-gdb\\bin;W:\\soft\\esp\\tools\\tools\\riscv32-esp-elf-gdb\\14.2_20240403\\riscv32-esp-elf-gdb\\bin;W:\\soft\\esp\\tools\\tools\\xtensa-esp-elf\\esp-13.2.0_20240530\\xtensa-esp-elf\\bin;W:\\soft\\esp\\tools\\tools\\riscv32-esp-elf\\esp-13.2.0_20240530\\riscv32-esp-elf\\bin;W:\\soft\\esp\\tools\\tools\\esp32ulp-elf\\2.38_20240113\\esp32ulp-elf\\bin;W:\\soft\\esp\\tools\\tools\\cmake\\3.30.2\\bin;W:\\soft\\esp\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016\\openocd-esp32\\bin;W:\\soft\\esp\\tools\\tools\\ninja\\1.12.1;W:\\soft\\esp\\tools\\tools\\idf-exe\\1.0.3;W:\\soft\\esp\\tools\\tools\\ccache\\4.10.2\\ccache-4.10.2-windows-x86_64;W:\\soft\\esp\\tools\\tools\\dfu-util\\0.11\\dfu-util-0.11-win64;W:\\soft\\esp\\tools\\tools\\esp-rom-elfs\\20240305",
   "idf.customExtraVars": {
     "OPENOCD_SCRIPTS": "W:\\soft\\esp\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016/openocd-esp32/share/openocd/scripts",
     "IDF_CCACHE_ENABLE": "1",
-    "ESP_ROM_ELF_DIR": "W:\\soft\\esp\\tools\\tools\\esp-rom-elfs\\20240305/"
+    "ESP_ROM_ELF_DIR": "W:\\soft\\esp\\tools\\tools\\esp-rom-elfs\\20240305/",
+    "IDF_TOOLS_PATH": "W:\\soft\\esp\\tools",
+    "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
   },
-  "idf.espIdfPathWin": "W:\\soft\\esp\\idf\\v5.3\\esp-idf",
-  "idf.openOcdConfigs": ["board/esp32-wrover-kit-3.3v.cfg"],
-  "idf.portWin": "COM9",
-  "idf.pythonBinPathWin": "W:\\soft\\esp\\tools\\python_env\\idf5.3_py3.11_env\\Scripts\\python.exe",
+  "idf.espIdfPathWin": "W:\\soft\\esp\\idf\\v5.5\\esp-idf",
+  "idf.openOcdConfigs": [
+    "board/esp32-wrover-kit-3.3v.cfg"
+  ],
+  "idf.portWin": "COM5",
   "idf.toolsPathWin": "W:\\soft\\esp\\tools",
   "idf.flashType": "UART",
-  "idf.pythonInstallPath": "W:\\soft\\esp\\tools\\tools\\idf-python\\3.11.2\\python.exe"
+  "idf.pythonInstallPath": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe",
+  "idf.pythonBinPathWin": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe",
+  "idf.pythonBinPath": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe"
 }

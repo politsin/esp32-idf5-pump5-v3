@@ -9,13 +9,17 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py build",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
+            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
+            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
+          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
+          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
         }
       },
       "problemMatcher": [
@@ -62,13 +66,17 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py fullclean",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
+            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
+            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
+          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
+          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
         }
       },
       "problemMatcher": [
@@ -94,13 +102,17 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py flash -p ${config:idf.portWin} -b ${config:idf.flashBaudRate}",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
+            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
+            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
+          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
+          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
         }
       },
       "problemMatcher": [
@@ -126,13 +138,17 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py -p ${config:idf.portWin} monitor",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
+            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
+            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
+          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
+          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
         }
       },
       "problemMatcher": [
@@ -233,6 +249,25 @@
             "PATH": "${env:PATH};${config:idf.customExtraPaths}",
             "PYTHONPATH": "${command:espIdf.getExtensionPath}/esp_debug_adapter/debug_adapter"
           }
+        }
+      }
+    }
+    ,
+    {
+      "label": "ESP-IDF Size",
+      "type": "shell",
+      "command": "${config:idf.pythonBinPath} ${config:idf.espIdfPath}/tools/idf.py size",
+      "windows": {
+        "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py size",
+        "options": {
+          "env": {
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
+          }
+        }
+      },
+      "options": {
+        "env": {
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
         }
       }
     }
