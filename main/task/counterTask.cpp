@@ -191,9 +191,8 @@ app_config_t app_config = {
 
 void counterTask(void *pvParam) {
 
-  gpio_pad_select_gpio(PUMP);
-  gpio_set_direction(PUMP, GPIO_MODE_OUTPUT);
-  gpio_set_level(PUMP, 0);
+  // Помпа через PCF8575
+  ioexp_set_pump(false);
   // Все клапаны выключены через PCF8575
   ioexp_set_all_valves(false);
 
@@ -254,7 +253,7 @@ void counterTask(void *pvParam) {
         flush_mode = true;
         
         // Включаем помпу
-        gpio_set_level(PUMP, 1);
+        ioexp_set_pump(true);
         isOn = true;
         pumpOn = true;
         app_state.is_on = isOn;
@@ -343,7 +342,7 @@ void counterTask(void *pvParam) {
         
         // Закрываем все клапаны и выключаем помпу
         ioexp_set_all_valves(false);
-        gpio_set_level(PUMP, 0);
+        ioexp_set_pump(false);
         isOn = false;
         pumpOn = false;
         app_state.is_on = isOn;
@@ -359,7 +358,7 @@ void counterTask(void *pvParam) {
         flush_stopped:
         // Обработка остановки промывки
         ioexp_set_all_valves(false);
-        gpio_set_level(PUMP, 0);
+        ioexp_set_pump(false);
         isOn = false;
         pumpOn = false;
         app_state.is_on = isOn;
@@ -376,7 +375,7 @@ void counterTask(void *pvParam) {
         rot = 0;
         isOn = true;
         pumpOn = true;
-        gpio_set_level(PUMP, isOn);
+        ioexp_set_pump(isOn);
         app_state.water_delta = 0;
         // Сброс времени клапанов и счётчика банок
         for (int i = 0; i < 5; i++) {
@@ -442,7 +441,7 @@ void counterTask(void *pvParam) {
         
         pump_start_time = 0; // Сбрасываем время старта помпы
         vTaskDelay(pdMS_TO_TICKS(300));
-        gpio_set_level(PUMP, 0);
+        ioexp_set_pump(false);
       }
       if (notification & ENCODER_CHANGED_BIT) {
         app_state.water_target = app_config.steps + app_state.encoder;
@@ -535,7 +534,7 @@ void counterTask(void *pvParam) {
         telegram_send_message(message);
         
         vTaskDelay(pdMS_TO_TICKS(300));
-        gpio_set_level(PUMP, 0);
+        ioexp_set_pump(false);
         pump_start_time = 0;
       }
     }

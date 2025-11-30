@@ -24,6 +24,7 @@
 #include "i2cdev.h"
 #include "util/i2c.h"
 #include "util/pcf8575_io.h"
+#include "pcf8575.h"
 
 app_state_t app_state = {
     .is_on = false,
@@ -69,9 +70,38 @@ extern "C" void app_main(void) {
   i2c_init(true);
   ESP_ERROR_CHECK(i2cdev_init());
   {
-    esp_err_t err = ioexp_init();
-    if (err != ESP_OK) {
-      ESP_LOGE(MAINTAG, "PCF8575 init failed (0x%x). Продолжаем без расширителя.", (unsigned)err);
+    // ТЕСТ: мигать только P15 (помпа, бит 15) напрямую через pcf8575_* из esp-idf-lib
+    i2c_dev_t dev = {};
+    ESP_ERROR_CHECK(pcf8575_init_desc(&dev, PCF8575_I2C_ADDR_BASE, I2C_NUM_0, I2C_SDA, I2C_SCL));
+    uint16_t port = 0xFFFF; // все OFF (активный низ: 1)
+    ESP_ERROR_CHECK(pcf8575_port_write(&dev, port)); // погасить всё (1)
+    uint32_t cycle = 0;
+    // Последовательность: клапаны P12,P13,P14,P15 (бит 10..13), затем помпа P17 (бит 15)
+    const int bits_seq[] = {10, 11, 12, 13, 15};
+    while (true) {
+      for (size_t i = 0; i < sizeof(bits_seq)/sizeof(bits_seq[0]); ++i) {
+        int bit = bits_seq[i];
+        // Пробуем probe с ACK
+        esp_err_t prw = i2c_dev_probe(&dev, I2C_DEV_WRITE);
+        esp_err_t prr = i2c_dev_probe(&dev, I2C_DEV_READ);
+        // ON: активный низ -> 0 на выбранном бите, остальные 1
+        uint16_t on_port = (uint16_t)(0xFFFF & ~(1u << bit));
+        esp_err_t w1 = pcf8575_port_write(&dev, on_port);
+        uint16_t rv1 = 0xFFFF;
+        esp_err_t r1 = pcf8575_port_read(&dev, &rv1);
+        ESP_LOGI(MAINTAG, "IOEXP OUT P%02d ON  write=%s read=%s val=0x%04x probeW=%s probeR=%s",
+                 bit, esp_err_to_name(w1), esp_err_to_name(r1), (unsigned)rv1,
+                 esp_err_to_name(prw), esp_err_to_name(prr));
+        vTaskDelay(pdMS_TO_TICKS(300));
+        // OFF: вернуть все 1
+        esp_err_t w2 = pcf8575_port_write(&dev, 0xFFFF);
+        uint16_t rv2 = 0xFFFF;
+        esp_err_t r2 = pcf8575_port_read(&dev, &rv2);
+        ESP_LOGI(MAINTAG, "IOEXP OUT P%02d OFF write=%s read=%s val=0x%04x",
+                 bit, esp_err_to_name(w2), esp_err_to_name(r2), (unsigned)rv2);
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
+      ESP_LOGI(MAINTAG, "IOEXP TEST seq valves(12..15)+pump(17) cycle %lu", (unsigned long)++cycle);
     }
   }
 

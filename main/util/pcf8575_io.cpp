@@ -13,16 +13,18 @@ static const char* TAG_IOEXP = "IOEXP";
 
 // Соответствие битов портов PCF8575
 // Нижний байт = P0..P7, верхний байт = P8..P15
-// Клапаны: P0..P4
-static constexpr int VALVE1_BIT = 0; // P0
-static constexpr int VALVE2_BIT = 1; // P1
-static constexpr int VALVE3_BIT = 2; // P2
-static constexpr int VALVE4_BIT = 3; // P3
-static constexpr int VALVE5_BIT = 4; // P4
-// Кнопки: P8..P10 (активный низ)
-static constexpr int BTN_STOP_BIT  = 8;  // P8
-static constexpr int BTN_FLUSH_BIT = 9;  // P9
-static constexpr int BTN_RUN_BIT   = 10; // P10
+// Клапаны: P10..P13
+static constexpr int VALVE1_BIT = 10; // P10
+static constexpr int VALVE2_BIT = 11; // P11
+static constexpr int VALVE3_BIT = 12; // P12
+static constexpr int VALVE4_BIT = 13; // P13
+static constexpr int VALVE5_BIT = 14; // P14 (резерв на будущее)
+// Кнопки: P1..P3 (активный низ)
+static constexpr int BTN_STOP_BIT  = 1;  // P1
+static constexpr int BTN_FLUSH_BIT = 2;  // P2
+static constexpr int BTN_RUN_BIT   = 3;  // P3
+// Помпа: P15
+static constexpr int PUMP_BIT = 15; // P15
 
 static i2c_dev_t pcf_dev{};
 static uint16_t port_shadow = 0xFFFF; // 1 = подтяжка/вход; 0 = выводим '0'
@@ -52,17 +54,18 @@ esp_err_t ioexp_init(void)
 
     ESP_ERROR_CHECK(pcf8575_init_desc(&pcf_dev, PCF8575_ADDR, I2C_NUM_0, sda, scl));
 
-    // Начальное состояние: все '1' (входы/высокий уровень)
-    port_shadow = 0xFFFF;
-    // Сразу выключим все клапаны (P0..P4 = 0) без вызова ioexp_* (ещё не initialized)
+    // Начальное состояние (активный низ для выходов):
+    // - Кнопки (P1..P3) держим '1' для чтения
+    // - Выходы (P10..P13 клапаны, P15 помпа) выключены '1' (OFF)
     {
-        const uint16_t valves_mask =
+        const uint16_t outputs_mask =
             (1u << VALVE1_BIT) |
             (1u << VALVE2_BIT) |
             (1u << VALVE3_BIT) |
             (1u << VALVE4_BIT) |
-            (1u << VALVE5_BIT);
-        port_shadow &= (uint16_t)~valves_mask;
+            (1u << PUMP_BIT);
+        port_shadow = 0xFFFF;
+        port_shadow |= outputs_mask; // выходы = 1 (OFF), входы остаются 1
         esp_err_t r = pcf8575_port_write(&pcf_dev, port_shadow);
         if (r != ESP_OK) {
             ESP_LOGE(TAG_IOEXP, "PCF8575 write failed at 0x%02X (check wiring/address). err=0x%x", PCF8575_ADDR, r);
@@ -73,6 +76,15 @@ esp_err_t ioexp_init(void)
     initialized = true;
     ESP_LOGI(TAG_IOEXP, "PCF8575 initialized at 0x%02X", PCF8575_ADDR);
     return ESP_OK;
+}
+
+esp_err_t ioexp_set_pump(bool level)
+{
+    if (!initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // Активный низ: true -> 0, false -> 1
+    return write_bit_and_flush(PUMP_BIT, !level);
 }
 
 esp_err_t ioexp_set_valve(int valve_index_1_based, bool level)
@@ -89,7 +101,8 @@ esp_err_t ioexp_set_valve(int valve_index_1_based, bool level)
         case 5: bit = VALVE5_BIT; break;
         default: return ESP_ERR_INVALID_ARG;
     }
-    return write_bit_and_flush(bit, level);
+    // Активный низ: true -> 0, false -> 1
+    return write_bit_and_flush(bit, !level);
 }
 
 esp_err_t ioexp_set_all_valves(bool level)
@@ -103,10 +116,11 @@ esp_err_t ioexp_set_all_valves(bool level)
         (1u << VALVE3_BIT) |
         (1u << VALVE4_BIT) |
         (1u << VALVE5_BIT);
-    if (level)
-        port_shadow |= mask;
-    else
-        port_shadow &= (uint16_t)~mask;
+    // Активный низ
+    if (level) // включить все
+        port_shadow &= (uint16_t)~mask; // 0 = ON
+    else       // выключить все
+        port_shadow |= mask;            // 1 = OFF
     return pcf8575_port_write(&pcf_dev, port_shadow);
 }
 
