@@ -154,6 +154,7 @@ void counterTask(void *pvParam) {
       gpio_ticks_pending++;
     };
     gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
+    gpio_intr_enable(DI);
   }
   // Создаём юнит PCNT
   static pcnt_unit_handle_t pcnt_unit = NULL;
@@ -235,7 +236,7 @@ void counterTask(void *pvParam) {
       .mode = GPIO_MODE_INPUT,
       .pull_up_en = GPIO_PULLUP_ENABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE
+      .intr_type = GPIO_INTR_NEGEDGE
   };
   gpio_config(&di_config);
 
