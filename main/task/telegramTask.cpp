@@ -24,6 +24,7 @@ typedef struct {
     char message[512];
     char chat_id[32];    // optional: пусто -> использовать дефолт
     char thread_id[16];  // optional: пусто -> использовать дефолт
+    uint8_t important;   // 1 = продублировать в важный чат
 } telegram_message_t;
 
 // HTTP обработчик для отправки сообщений
@@ -182,12 +183,27 @@ void telegramTask(void *pvParameter)
                 continue;
             }
             
-            // Отправляем сообщение синхронно
+            // Отправляем сообщение синхронно в обычный канал
             esp_err_t result = telegram_send_message_internal(&msg);
             if (result == ESP_OK) {
                 ESP_LOGI(TAG, "Message sent successfully: %s", msg.message);
             } else {
                 ESP_LOGE(TAG, "Failed to send message: %s", msg.message);
+            }
+            // При необходимости дублируем в важный канал
+            if (msg.important) {
+                telegram_message_t imp = msg;
+                // переопределяем на важный чат/тред
+                strncpy(imp.chat_id, TELEGRAM_CHAT_ID_IMPORTANT, sizeof(imp.chat_id) - 1);
+                imp.chat_id[sizeof(imp.chat_id) - 1] = '\0';
+                strncpy(imp.thread_id, TELEGRAM_MESSAGE_THREAD_ID_IMPORTANT, sizeof(imp.thread_id) - 1);
+                imp.thread_id[sizeof(imp.thread_id) - 1] = '\0';
+                esp_err_t r2 = telegram_send_message_internal(&imp);
+                if (r2 == ESP_OK) {
+                    ESP_LOGI(TAG, "Important duplicate sent: %s", msg.message);
+                } else {
+                    ESP_LOGE(TAG, "Failed to send important duplicate: %s", msg.message);
+                }
             }
         }
     }
@@ -209,7 +225,7 @@ esp_err_t telegram_queue_init(void)
     return ESP_OK;
 }
 
-// Неблокирующая отправка сообщения в Telegram
+// Неблокирующая отправка сообщения в Telegram (обычный)
 esp_err_t telegram_send_message_async(const char* message)
 {
     if (!message || !telegram_queue) {
@@ -223,7 +239,7 @@ esp_err_t telegram_send_message_async(const char* message)
         return ESP_FAIL;
     }
 
-    telegram_message_t msg = {};
+    telegram_message_t msg = {}; // по умолчанию normal
     strncpy(msg.message, message, sizeof(msg.message) - 1);
     msg.message[sizeof(msg.message) - 1] = '\0'; // Гарантируем завершающий ноль
 
@@ -277,6 +293,33 @@ esp_err_t telegram_send_message_async_to(const char* message, const char* chat_i
              (msg.chat_id[0] ? msg.chat_id : TELEGRAM_CHAT_ID),
              (msg.thread_id[0] ? msg.thread_id : TELEGRAM_MESSAGE_THREAD_ID),
              message);
+    return ESP_OK;
+}
+
+// Неблокирующая отправка с признаком важности
+esp_err_t telegram_send_message_async_flag(const char* message, bool important)
+{
+    if (!message || !telegram_queue) {
+        ESP_LOGE(TAG, "Message is NULL or queue not initialized");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!is_wifi_connected()) {
+        ESP_LOGW(TAG, "WiFi not connected, message not sent: %s", message);
+        return ESP_FAIL;
+    }
+    telegram_message_t msg = {};
+    strncpy(msg.message, message, sizeof(msg.message) - 1);
+    msg.message[sizeof(msg.message) - 1] = '\0';
+    msg.important = important ? 1 : 0;
+    if (uxQueueMessagesWaiting(telegram_queue) >= 10) {
+        ESP_LOGW(TAG, "Telegram queue is full, message dropped: %s", message);
+        return ESP_FAIL;
+    }
+    if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to send message to queue");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Message queued (%s): %s", important ? "important" : "normal", message);
     return ESP_OK;
 }
 

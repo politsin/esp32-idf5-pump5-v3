@@ -15,6 +15,8 @@ esp_err_t telegram_test_bot(void);
 
 // Отправка сообщения в Telegram
 esp_err_t telegram_send_message(const char* message);
+// Отправка сообщения с признаком важности (true = дублируется в важный чат)
+esp_err_t telegram_send_message_flag(const char* message, bool important);
 // Отправка сообщения в конкретный чат/тред
 esp_err_t telegram_send_message_to(const char* message, const char* chat_id, const char* thread_id);
 

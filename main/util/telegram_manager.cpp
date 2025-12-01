@@ -6,6 +6,7 @@
 
 static const char *TAG = "TELEGRAM_MANAGER";
 extern "C" esp_err_t telegram_send_message_async_to(const char* message, const char* chat_id, const char* thread_id);
+extern "C" esp_err_t telegram_send_message_async_flag(const char* message, bool important);
 
 // Инициализация Telegram менеджера
 esp_err_t telegram_init(void)
@@ -37,6 +38,11 @@ esp_err_t telegram_test_bot(void)
 esp_err_t telegram_send_message(const char* message)
 {
     return telegram_send_message_async(message);
+}
+
+esp_err_t telegram_send_message_flag(const char* message, bool important)
+{
+    return telegram_send_message_async_flag(message, important);
 }
 
 esp_err_t telegram_send_message_to(const char* message, const char* chat_id, const char* thread_id)

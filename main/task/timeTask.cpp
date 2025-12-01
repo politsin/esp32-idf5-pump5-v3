@@ -94,12 +94,11 @@ static void send_daily_report() {
              daily_banks_for_report, daily_banks_for_report / 4,
              app_state.total_banks_count);
     
-    esp_err_t result = telegram_send_message(message);
+    // Отправляем как "важное": в основной и дублируем в важный канал
+    esp_err_t result = telegram_send_message_flag(message, true);
     if (result == ESP_OK) {
         ESP_LOGI(TIME_TAG, "Daily report sent successfully");
         daily_report_sent = true;
-        // Дублируем в старый канал/тред
-        telegram_send_message_to(message, TELEGRAM_CHAT_ID_OLD, TELEGRAM_MESSAGE_THREAD_ID_OLD);
         
         // Синхронизируем время после отправки ежедневного отчёта
         ESP_LOGI(TIME_TAG, "Syncing time after daily report...");
