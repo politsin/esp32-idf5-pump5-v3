@@ -77,6 +77,11 @@ static int32_t accumulated_overpoured_ticks[NUM_VALVES] = {0, 0, 0, 0};
 // Массив предварительно рассчитанных тиков коррекции для скоростей от 30% до 100%
 static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 100%
 
+// Отложенная отправка сообщения об изменении уставки (антиспам)
+static volatile bool encoder_change_pending = false;
+static TickType_t encoder_change_last_time = 0;
+static const TickType_t ENCODER_REPORT_SILENCE = pdMS_TO_TICKS(700); // пауза без новых изменений
+
 // Флаг и параметры переключения клапанов, выполняются в задаче (не в ISR)
 static volatile int pending_close_valve = 0;
 static volatile int pending_open_valve = 0;
@@ -549,16 +554,9 @@ void counterTask(void *pvParam) {
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
         ESP_LOGW(COUNTER_TAG, "Encoder changed: %ld", app_state.encoder);
         
-        // Отправляем уведомление в Telegram об изменении уставки
-        char message[256];
-        snprintf(message, sizeof(message), 
-                "Изменена уставка наливайки:\n"
-                "Базовая уставка: %lu\n"
-                "Сдвиг энкодера: %ld\n"
-                "Новая уставка: %lu", 
-                app_config.steps, app_state.encoder, 
-                app_state.water_target);
-        telegram_send_message(message);
+        // Не шлём сразу — только отметим и подождём «тишину», чтобы отправить один итог
+        encoder_change_pending = true;
+        encoder_change_last_time = xTaskGetTickCount();
       }
       if (notification & PROGRESS_REPORT_BIT) {
         // Отправляем промежуточный отчёт о прогрессе
@@ -566,6 +564,23 @@ void counterTask(void *pvParam) {
           int32_t current_time = xTaskGetTickCount() - app_state.start_time;
           telegram_send_progress_report(app_state.banks_count, current_time);
         }
+      }
+    }
+    
+    // Если были изменения уставки, а новых не было ENCODER_CHANGED_BIT в течение ENCODER_REPORT_SILENCE — шлём одно итоговое сообщение
+    if (encoder_change_pending) {
+      TickType_t now = xTaskGetTickCount();
+      if (now - encoder_change_last_time >= ENCODER_REPORT_SILENCE) {
+        encoder_change_pending = false;
+        char message[256];
+        snprintf(message, sizeof(message),
+                 "Изменена уставка наливайки:\n"
+                 "Базовая уставка: %lu\n"
+                 "Сдвиг энкодера: %ld\n"
+                 "Новая уставка: %lu",
+                 app_config.steps, app_state.encoder,
+                 app_config.steps + app_state.encoder);
+        telegram_send_message(message);
       }
     }
     
