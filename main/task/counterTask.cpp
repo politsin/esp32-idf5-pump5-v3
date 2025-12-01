@@ -77,6 +77,14 @@ static int32_t accumulated_overpoured_ticks[5] = {0, 0, 0, 0, 0};
 // Массив предварительно рассчитанных тиков коррекции для скоростей от 30% до 100%
 static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 100%
 
+// Флаг и параметры переключения клапанов, выполняются в задаче (не в ISR)
+static volatile int pending_close_valve = 0;
+static volatile int pending_open_valve = 0;
+static volatile bool valve_switch_pending = false;
+#ifndef VALVE_SWITCH_BIT
+#define VALVE_SWITCH_BIT (1UL << 29)
+#endif
+
 // Функция для расчёта тиков коррекции на основе процента скорости
 static int32_t calculate_correction_ticks(int speed_percent) {
     if (speed_percent >= 100) {
@@ -129,14 +137,8 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             valve_start_time = current_time;
             
             // Убираем отладочный лог из ISR - может вызывать проблемы
-            // Закрываем текущий клапан
-            switch (current_valve) {
-                case 1: ioexp_set_valve(1, false); break;
-                case 2: ioexp_set_valve(2, false); break;
-                case 3: ioexp_set_valve(3, false); break;
-                case 4: ioexp_set_valve(4, false); break;
-                case 5: ioexp_set_valve(5, false); break;
-            }
+            // Формируем задание на закрытие/открытие (без I2C в ISR)
+            pending_close_valve = current_valve;
 
             // Следующий клапан по кругу
             current_valve++;
@@ -144,14 +146,10 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
             app_state.valve = current_valve;
             app_state.banks_count++;
             
-            // СРАЗУ открываем новый клапан после переключения
-            switch (current_valve) {
-                case 1: ioexp_set_valve(1, true); break;
-                case 2: ioexp_set_valve(2, true); break;
-                case 3: ioexp_set_valve(3, true); break;
-                case 4: ioexp_set_valve(4, true); break;
-                case 5: ioexp_set_valve(5, true); break;
-            }
+            // Ставим задание на открытие нового клапана (выполнит задача)
+            pending_open_valve = current_valve;
+            valve_switch_pending = true;
+            xTaskNotifyFromISR(counter, VALVE_SWITCH_BIT, eSetBits, NULL);
             
             // Проверяем, нужно ли отправить промежуточный отчёт
             if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
@@ -240,6 +238,19 @@ void counterTask(void *pvParam) {
   while (true) {
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
+      if (notification & VALVE_SWITCH_BIT) {
+        // Выполнить переключение клапанов в контексте задачи (разрешён I2C)
+        int close_v = pending_close_valve;
+        int open_v  = pending_open_valve;
+        pending_close_valve = 0;
+        valve_switch_pending = false;
+        if (close_v >= 1 && close_v <= 5) {
+          ioexp_set_valve(close_v, false);
+        }
+        if (open_v >= 1 && open_v <= 5) {
+          ioexp_set_valve(open_v, true);
+        }
+      }
       if (notification & BTN_FLUSH_BIT) {
         // Промывка возможна только из состояния idle (после остановки)
         if (isOn || app_state.start_time > 0) {
