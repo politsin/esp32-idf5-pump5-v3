@@ -39,9 +39,10 @@ static SemaphoreHandle_t pcf_int_sem;
 static bool last_stop = false, last_flush = false, last_run = false;
 static const int ENC_STEP_CLICK = 1;  // шаг по клику
 static const int ENC_STEP_LONG  = 10; // шаг по долгому удержанию
-static volatile bool btn1_down = false, btn2_down = false;
-static volatile bool btn1_repeat = false, btn2_repeat = false;
 static volatile bool buttons_enabled = false; // защита от «корёжит» сразу после старта
+static volatile TickType_t next_repeat1 = 0, next_repeat2 = 0;
+static volatile bool repeat_session1 = false, repeat_session2 = false;
+static volatile TickType_t repeat_deadline1 = 0, repeat_deadline2 = 0;
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -55,8 +56,18 @@ static void on_button(button_t *btn, button_state_t state) {
   }
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Лонгклик отключён
-    return;
+    // Долгое нажатие: один раз шаг ±20 (без репита)
+    if (btn == &btn1) {
+      app_state.encoder -= 20;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift long -= 20 -> %ld", app_state.encoder);
+    } else if (btn == &btn2) {
+      app_state.encoder += 20;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift long += 20 -> %ld", app_state.encoder);
+    }
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn_stop) {
@@ -77,28 +88,22 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
-    // Кнопки платы работают как замена энкодера.
-    // Обычный клик — ±1; клики в режиме репита — ±10
-    // btn1 (GPIO0) — уменьшить, btn2 (GPIO35) — увеличить
+    // Кнопки платы: клик ±1
     if (btn == &btn1) {
-      app_state.encoder -= ENC_STEP_CLICK;
+      app_state.encoder -= 1;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= 1 -> %ld", app_state.encoder);
     }
     if (btn == &btn2) {
-      app_state.encoder += ENC_STEP_CLICK;
+      app_state.encoder += 1;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += 1 -> %ld", app_state.encoder);
     }
   }
-  if (state == BUTTON_PRESSED) {
-    // Ничего: репит определяется по физическому уровню GPIO
-  }
-  if (state == BUTTON_RELEASED) {
-    // Ничего: репит определяется по физическому уровню GPIO
-  }
+  if (state == BUTTON_PRESSED) { /* no-op */ }
+  if (state == BUTTON_RELEASED) { /* no-op */ }
   // Notify screenTask
   if (notify_value && false) {
     // Отправляем уведомление задаче screenTask
@@ -146,9 +151,7 @@ void buttonTask(void *pvParam) {
   // Разрешим обработку кнопок через короткую паузу после старта,
   // чтобы входы успели стабилизироваться
   TickType_t enable_at = xTaskGetTickCount() + pdMS_TO_TICKS(1500);
-  TickType_t last_repeat1 = 0;
-  TickType_t last_repeat2 = 0;
-  const TickType_t repeat_period = pdMS_TO_TICKS(150); // ручной репит при удержании
+  // Ручного опроса и репита больше нет — используем библиотеку
   while (true) {
     if (!buttons_enabled && xTaskGetTickCount() >= enable_at) {
       buttons_enabled = true;
@@ -167,27 +170,6 @@ void buttonTask(void *pvParam) {
       last_stop = stop_p;
       last_flush = flush_p;
       last_run = run_p;
-    }
-
-    // Ручной авто-репит: опираемся на фактический уровень GPIO, а не на события
-    if (buttons_enabled) {
-      TickType_t now = xTaskGetTickCount();
-      bool phys1_pressed = (gpio_get_level(BUTTON_PIN1) == (btn1.pressed_level ? 1 : 0));
-      bool phys2_pressed = (gpio_get_level(BUTTON_PIN2) == (btn2.pressed_level ? 1 : 0));
-      if (phys1_pressed && (now - last_repeat1 >= repeat_period)) {
-        last_repeat1 = now;
-        app_state.encoder -= ENC_STEP_LONG;
-        xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-        xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      }
-      if (phys2_pressed && (now - last_repeat2 >= repeat_period)) {
-        last_repeat2 = now;
-        app_state.encoder += ENC_STEP_LONG;
-        xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-        xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      }
-      if (!phys1_pressed) last_repeat1 = now;
-      if (!phys2_pressed) last_repeat2 = now;
     }
   }
 }
