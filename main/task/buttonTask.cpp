@@ -43,6 +43,7 @@ static volatile bool buttons_enabled = false; // защита от «корёж�
 static volatile TickType_t next_repeat1 = 0, next_repeat2 = 0;
 static volatile bool repeat_session1 = false, repeat_session2 = false;
 static volatile TickType_t repeat_deadline1 = 0, repeat_deadline2 = 0;
+static volatile bool long_active_btn1 = false, long_active_btn2 = false; // флаги режима репита через библиотеку
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -56,14 +57,16 @@ static void on_button(button_t *btn, button_state_t state) {
   }
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Долгое нажатие: шаг ±10; с включённым autorepeat библиотека будет присылать повторяющиеся LONG-события
+    // Входим в режим "долгого удержания": дальнейшие CLICK будут трактоваться как ±10
     if (btn == &btn1) {
-      app_state.encoder -= 10;
+      long_active_btn1 = true;
+      app_state.encoder -= 10; // первый шаг по 10
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
       ESP_LOGI(BUTTON_TAG, "Encoder shift long -= 10 -> %ld", app_state.encoder);
     } else if (btn == &btn2) {
-      app_state.encoder += 10;
+      long_active_btn2 = true;
+      app_state.encoder += 10; // первый шаг по 10
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
       ESP_LOGI(BUTTON_TAG, "Encoder shift long += 10 -> %ld", app_state.encoder);
@@ -88,22 +91,30 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
-    // Кнопки платы: клик ±1
+    // Кнопки платы: клик — ±1, но если активен режим long ИЛИ кнопка физически удерживается, то ±10
     if (btn == &btn1) {
-      app_state.encoder -= 1;
+      bool phys_held = (gpio_get_level(BUTTON_PIN1) == (btn1.pressed_level ? 1 : 0));
+      int step = (long_active_btn1 || phys_held) ? 10 : 1;
+      app_state.encoder -= step;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift -= 1 -> %ld", app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", step, app_state.encoder);
     }
     if (btn == &btn2) {
-      app_state.encoder += 1;
+      bool phys_held = (gpio_get_level(BUTTON_PIN2) == (btn2.pressed_level ? 1 : 0));
+      int step = (long_active_btn2 || phys_held) ? 10 : 1;
+      app_state.encoder += step;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift += 1 -> %ld", app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", step, app_state.encoder);
     }
   }
   if (state == BUTTON_PRESSED) { /* no-op */ }
-  if (state == BUTTON_RELEASED) { /* no-op */ }
+  if (state == BUTTON_RELEASED) {
+    // Выход из режима long
+    if (btn == &btn1) long_active_btn1 = false;
+    if (btn == &btn2) long_active_btn2 = false;
+  }
   // Notify screenTask
   if (notify_value && false) {
     // Отправляем уведомление задаче screenTask
