@@ -114,7 +114,6 @@ void screenTask(void *pvParam) {
   // Создаём отдельные label для P1–P4 справа
   lv_obj_t *valve_labels[NUM_VALVES];
   lv_obj_t *valve_indicators[NUM_VALVES]; // Кружочки для индикации активных клапанов
-  int valve_label_x = 135; // Было 120, стало 135 (ещё правее на 3 символа)
   int valve_label_y_start = 8;
   int valve_label_y_step = 18;
   for (int i = 0; i < NUM_VALVES; i++) {
@@ -164,7 +163,7 @@ void screenTask(void *pvParam) {
   };
   lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnX_start);
   lv_obj_t *btnYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
-  lv_obj_t *btnBlue = createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
+  createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
 
   uint32_t notification = 0;
   TickType_t lastUpdate = xTaskGetTickCount();

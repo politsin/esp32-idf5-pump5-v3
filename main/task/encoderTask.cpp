@@ -32,10 +32,7 @@ static const uint32_t debouncsEnc = 100;
 static const uint32_t debouncsBtn = 100;
 rotenc_handle_t handle = {};
 
-// Глобальные переменные для защиты от спама
-static uint32_t last_button_press_time = 0;
-static const uint32_t BUTTON_DEBOUNCE_MS = 1000; // 1 секунда между нажатиями
-static int32_t enc_last_sent = 0;  // Последнее отправленное значение
+// (удалены неиспользуемые переменные, чтобы убрать предупреждения компиляции)
 
 static void button_callback(void *arg);
 static void event_callback(rotenc_event_t event);

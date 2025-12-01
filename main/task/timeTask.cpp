@@ -40,10 +40,10 @@ static esp_err_t sync_time() {
     
     // Инициализируем SNTP если ещё не инициализирован
     if (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET) {
-        sntp_setoperatingmode(SNTP_OPMODE_POLL);
-        sntp_setservername(0, "pool.ntp.org");
-        sntp_setservername(1, "time.nist.gov");
-        sntp_init();
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, "pool.ntp.org");
+        esp_sntp_setservername(1, "time.nist.gov");
+        esp_sntp_init();
     }
     
     // Ждём синхронизации времени (максимум 10 секунд)
