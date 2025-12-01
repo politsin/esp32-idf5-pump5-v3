@@ -169,6 +169,70 @@ void screenTask(void *pvParam) {
   TickType_t lastUpdate = xTaskGetTickCount();
 
   while (true) {
+    // Даже в состоянии "остановлено" реагируем немедленно на уведомления экрана
+    if (!app_state.is_on) {
+      uint32_t notif_now = 0;
+      if (xTaskNotifyWait(0x0, ULONG_MAX, &notif_now, 0) == pdTRUE) {
+        if (notif_now & (ENCODER_CHANGED_BIT | UPDATE_BIT | BTN1_BUTTON_CLICKED_BIT | BTN2_BUTTON_CLICKED_BIT | BTN_STOP_BIT | BTN_RUN_BIT)) {
+          // Форсируем немедленное обновление экрана по тем же правилам, что в периодическом апдейте
+          char labelText[192];
+          int32_t total_seconds, minutes, seconds, banks_count;
+
+          if (app_state.counter_error) {
+            banks_count = app_state.final_banks;
+            snprintf(labelText, sizeof(labelText),
+                     "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: Err",
+                     app_state.encoder, app_state.previous_target, app_state.water_target,
+                     app_state.water_current, banks_count);
+          } else if (app_state.start_time > 0) {
+            total_seconds = (xTaskGetTickCount() - app_state.start_time) / 100;
+            banks_count = app_state.banks_count;
+            minutes = total_seconds / 60;
+            seconds = total_seconds % 60;
+            snprintf(labelText, sizeof(labelText),
+                     "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                     app_state.encoder, app_state.previous_target, app_state.water_target,
+                     app_state.water_current, banks_count,
+                     minutes, seconds);
+          } else {
+            total_seconds = app_state.final_time;
+            banks_count = app_state.final_banks;
+            minutes = total_seconds / 60;
+            seconds = total_seconds % 60;
+            snprintf(labelText, sizeof(labelText),
+                     "Encoder: %ld\nTarget: %ld>%ld\nCurrent: %ld\n>> Banks: %ld\nTime: %02ld:%02ld",
+                     app_state.encoder, app_state.previous_target, app_state.water_target,
+                     app_state.water_current, banks_count,
+                     minutes, seconds);
+          }
+
+          if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
+            lv_label_set_text(label, labelText);
+            for (int i = 0; i < NUM_VALVES; i++) {
+              char txt[16];
+              snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
+              lv_label_set_text(valve_labels[i], txt);
+
+              if (app_state.is_on && (i + 1 == app_state.valve || (app_state.valve == 0 && app_state.is_on))) {
+                lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x00FF00), LV_PART_MAIN);
+              } else {
+                lv_obj_set_style_bg_color(valve_indicators[i], lv_color_hex(0x333333), LV_PART_MAIN);
+              }
+            }
+
+            uint32_t total_time = 0;
+            for (int i = 0; i < NUM_VALVES; i++) {
+              total_time += app_state.valve_times[i];
+            }
+            char total_txt[32];
+            snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
+            lv_label_set_text(total_time_label, total_txt);
+            app_lvgl_unlock();
+          }
+        }
+      }
+    }
+
     if (app_state.is_on) {
       if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, portMAX_DELAY) == pdTRUE) {
         char labelText[192];
