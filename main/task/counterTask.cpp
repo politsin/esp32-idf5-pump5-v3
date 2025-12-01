@@ -84,6 +84,7 @@ static volatile bool valve_switch_pending = false;
 static volatile TickType_t last_di_isr_tick = 0; // для программного антидребезга в GPIO ISR (фоллбэк)
 static volatile int32_t last_logged_rot = -1;     // для "в лоб" логирования тиков
 static int last_di_level = -1;                    // для логирования изменения уровня на DI
+static volatile int32_t gpio_ticks_pending = 0;   // тики, накопленные GPIO ISR
 #ifndef VALVE_SWITCH_BIT
 #define VALVE_SWITCH_BIT (1UL << 29)
 #endif
@@ -139,9 +140,21 @@ void counterTask(void *pvParam) {
   gpio_pullup_en(DI);
   gpio_pulldown_dis(DI);
   gpio_set_intr_type(DI, GPIO_INTR_DISABLE);
-  ESP_LOGW(COUNTER_TAG, "DI setup: pin=%d, pullup=ON, pulldown=OFF, PCNT edge=NEGEDGE, GPIO ISR edge=NEGEDGE", (int)DI);
-  last_di_level = gpio_get_level(DI);
-  ESP_LOGW(COUNTER_TAG, "DI initial level: %d", last_di_level);
+  // Устанавливаем GPIO ISR (будет работать параллельно PCNT как надёжный фоллбэк)
+  {
+    esp_err_t isr_res = gpio_install_isr_service(0);
+    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
+      // молча продолжаем, если уже установлен или ошибка не критична
+    }
+    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
+    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
+      TickType_t now = xTaskGetTickCountFromISR();
+      if (now - last_di_isr_tick < pdMS_TO_TICKS(2)) return; // ~2 мс антидребезг
+      last_di_isr_tick = now;
+      gpio_ticks_pending++;
+    };
+    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
+  }
   // Создаём юнит PCNT
   static pcnt_unit_handle_t pcnt_unit = NULL;
   static pcnt_channel_handle_t pcnt_chan = NULL;
@@ -191,21 +204,7 @@ void counterTask(void *pvParam) {
     pcnt_unit_clear_count(pcnt_unit);
     pcnt_unit_start(pcnt_unit);
   } else {
-    ESP_LOGE(COUNTER_TAG, "PCNT init failed; counter will not be used");
-    // Фоллбэк: используем GPIO прерывание по фронту вверх с программным антидребезгом
-    // Перед добавлением обработчика убеждаемся, что сервис ISR установлен
-    esp_err_t isr_res = gpio_install_isr_service(0);
-    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
-      ESP_LOGE(COUNTER_TAG, "gpio_install_isr_service failed: 0x%x", (unsigned)isr_res);
-    }
-    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
-    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
-      TickType_t now = xTaskGetTickCountFromISR();
-      if (now - last_di_isr_tick < pdMS_TO_TICKS(2)) return; // ~2 мс антидребезг
-      last_di_isr_tick = now;
-      rot++;
-    };
-    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
+    // PCNT не готов — остаёмся только на GPIO ISR (уже установлен выше)
   }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
@@ -241,11 +240,13 @@ void counterTask(void *pvParam) {
   gpio_config(&di_config);
 
   while (true) {
-    // «В лоб»: лог изменения уровня на DI
-    int di_now = gpio_get_level(DI);
-    if (di_now != last_di_level) {
-      last_di_level = di_now;
-      ESP_LOGW(COUNTER_TAG, "DI level changed: %d", di_now);
+    // Забираем накопленные тики из GPIO ISR (надёжный фоллбэк, работает вместе с PCNT)
+    int32_t pending_ticks = gpio_ticks_pending;
+    if (pending_ticks > 0) {
+      gpio_ticks_pending -= pending_ticks;
+      rot += pending_ticks;
+      app_state.water_current = rot;
+      xTaskNotify(screen, UPDATE_BIT, eSetBits);
     }
 
     // Считываем импульсы с PCNT и обновляем счётчик воды
@@ -253,8 +254,6 @@ void counterTask(void *pvParam) {
     if (pcnt_ready && pcnt_unit_get_count(pcnt_unit, &pcnt_val) == ESP_OK && pcnt_val != 0) {
       pcnt_unit_clear_count(pcnt_unit);
       rot += (int32_t)pcnt_val;
-      // «В лоб»: лог каждого тика через PCNT
-      ESP_LOGW(COUNTER_TAG, "TICK via PCNT: +%d -> rot=%ld, DI=%d", pcnt_val, (long)rot, di_now);
       app_state.water_current = rot;
       // Обновляем экран сразу при изменении счётчика
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
@@ -294,10 +293,6 @@ void counterTask(void *pvParam) {
       }
     } else if (!pcnt_ready && rot > 0) {
       // Фоллбэк путь: рост rot происходит в GPIO ISR
-      if (rot != last_logged_rot) {
-        last_logged_rot = rot;
-        ESP_LOGW(COUNTER_TAG, "TICK via GPIO ISR: rot=%ld, DI=%d", (long)rot, di_now);
-      }
       app_state.water_current = rot;
       // Обновляем экран сразу при изменении счётчика
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
