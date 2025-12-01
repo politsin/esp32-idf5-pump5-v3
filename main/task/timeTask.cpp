@@ -38,8 +38,8 @@ static esp_err_t sync_time() {
         return ESP_ERR_WIFI_NOT_CONNECT;
     }
     
-    // Инициализируем SNTP если ещё не инициализирован
-    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET) {
+    // Инициализируем SNTP только если он ещё не запущен (иначе падение по assert)
+    if (!esp_sntp_enabled()) {
         esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
         esp_sntp_setservername(0, "pool.ntp.org");
         esp_sntp_setservername(1, "time.nist.gov");
