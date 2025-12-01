@@ -161,10 +161,10 @@ void screenTask(void *pvParam) {
     lv_obj_align(fig, LV_ALIGN_TOP_LEFT, x, btnY_bottom);
     return fig;
   };
-  // Индикаторы статусов слева направо: Синий (RUN), Жёлтый (FLUSH), Красный (STOP)
-  lv_obj_t *sqBlue = createFig(lv_color_hex(0x0000FF), btnX_start);
-  lv_obj_t *sqYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
-  lv_obj_t *sqRed  = createFig(lv_color_hex(0xFF0000), btnX_start + btnSpacing * 2);
+  // Индикаторы статусов слева направо: Зелёный (START/RUN), Жёлтый (FLUSH), Красный (STOP)
+  lv_obj_t *sqGreen  = createFig(lv_color_hex(0x00FF00), btnX_start);
+  lv_obj_t *sqYellow = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
+  lv_obj_t *sqRed    = createFig(lv_color_hex(0xFF0000), btnX_start + btnSpacing * 2);
   auto setWeak = [](lv_obj_t *obj){
     lv_obj_set_style_bg_opa(obj, LV_OPA_10, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_white(), LV_PART_MAIN);
@@ -174,18 +174,18 @@ void screenTask(void *pvParam) {
     lv_obj_set_style_border_color(obj, lv_color_white(), LV_PART_MAIN);
   };
   // На старте все слабые/серые
-  setWeak(sqBlue);
-  setWeak(sqYell);
+  setWeak(sqGreen);
+  setWeak(sqYellow);
   setWeak(sqRed);
   enum Status { ST_IDLE, ST_RUN, ST_FLUSH, ST_STOP };
   Status status = ST_IDLE;
   auto applyStatus = [&](Status st){
     status = st;
-    setWeak(sqBlue);
-    setWeak(sqYell);
+    setWeak(sqGreen);
+    setWeak(sqYellow);
     setWeak(sqRed);
-    if (st == ST_RUN)   setStrong(sqBlue);
-    if (st == ST_FLUSH) setStrong(sqYell);
+    if (st == ST_RUN)   setStrong(sqGreen);
+    if (st == ST_FLUSH) setStrong(sqYellow);
     if (st == ST_STOP)  setStrong(sqRed);
   };
 
@@ -298,12 +298,12 @@ void screenTask(void *pvParam) {
         }
         if (notification & BTN1_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
-          strcat(labelText, "\nYellow Clicked");
+          strcat(labelText, "\nBtn1 Clicked");
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         if (notification & BTN2_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Red button pressed");
-          strcat(labelText, "\nRed Pressed");
+          strcat(labelText, "\nBtn2 Pressed");
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         // Применяем статус-индикаторы при RUN/FLUSH/STOP
