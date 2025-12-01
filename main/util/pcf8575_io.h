@@ -10,9 +10,9 @@
 // P15      -> PUMP (выход, активный уровень 1)
 // P1..P3   -> STOP, FLUSH, RUN (входы, активный низ, удерживаются на '1')
 //
-// INT пин расширителя подключаем к GPIO_NUM_39 (можно поменять при необходимости)
+// INT пин расширителя подключаем к GPIO_NUM_17 (можно поменять при необходимости)
 #ifndef PCF8575_INT_GPIO
-#define PCF8575_INT_GPIO GPIO_NUM_39
+#define PCF8575_INT_GPIO GPIO_NUM_17
 #endif
 
 #ifdef __cplusplus
