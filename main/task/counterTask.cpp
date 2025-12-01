@@ -194,7 +194,7 @@ void counterTask(void *pvParam) {
   ioexp_set_all_valves(false);
 
   // Verify that the GPIO ISR service is installed
-  gpio_install_isr_service(0);
+  // Устанавливается один раз в encoderTask; здесь не дублируем
   // DI Настраиваем прерывания
   gpio_pad_select_gpio(DI);
   gpio_set_direction(DI, GPIO_MODE_INPUT);

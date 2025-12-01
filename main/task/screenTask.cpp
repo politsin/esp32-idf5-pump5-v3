@@ -290,7 +290,7 @@ void screenTask(void *pvParam) {
         }
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
-          for (int i = 0; i < 5; i++) {
+          for (int i = 0; i < NUM_VALVES; i++) {
             char txt[16];
             snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
@@ -305,7 +305,7 @@ void screenTask(void *pvParam) {
           
           // Обновляем общую сумму времени
           uint32_t total_time = 0;
-          for (int i = 0; i < 5; i++) {
+          for (int i = 0; i < NUM_VALVES; i++) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];
