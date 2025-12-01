@@ -216,7 +216,7 @@ void counterTask(void *pvParam) {
       .mode = GPIO_MODE_INPUT,
       .pull_up_en = GPIO_PULLUP_ENABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_ANYEDGE
+      .intr_type = GPIO_INTR_DISABLE
   };
   gpio_config(&di_config);
 
