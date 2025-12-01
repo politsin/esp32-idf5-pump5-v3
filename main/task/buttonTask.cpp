@@ -39,6 +39,8 @@ static SemaphoreHandle_t pcf_int_sem;
 static bool last_stop = false, last_flush = false, last_run = false;
 static const int ENC_STEP_CLICK = 1;  // шаг по клику
 static const int ENC_STEP_LONG  = 10; // шаг по долгому удержанию
+static volatile bool btn1_down = false, btn2_down = false;
+static volatile bool btn1_repeat = false, btn2_repeat = false;
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -48,17 +50,9 @@ static void IRAM_ATTR pcf_int_isr(void* arg) {
 static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Авто-щёлканье реализуем силами библиотеки (autorepeat=true):
-    // каждое событие LONG во время удержания даёт один шаг
-    if (btn == &btn1) {
-      app_state.encoder -= ENC_STEP_LONG;
-      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-    } else if (btn == &btn2) {
-      app_state.encoder += ENC_STEP_LONG;
-      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-    }
+    // Входим в режим "репита": дальше повторные CLICK от библиотеки трактуем как шаги по 10
+    if (btn == &btn1) btn1_repeat = true;
+    if (btn == &btn2) btn2_repeat = true;
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn_stop) {
@@ -79,25 +73,29 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
-    // Кнопки платы работают как замена энкодера:
-    // по клику — шаг ±1
+    // Кнопки платы работают как замена энкодера.
+    // Обычный клик — ±1; клики в режиме репита — ±10
     // btn1 (GPIO0) — уменьшить, btn2 (GPIO35) — увеличить
     if (btn == &btn1) {
-      app_state.encoder -= ENC_STEP_CLICK;
+      app_state.encoder -= (btn1_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK);
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", (btn1_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK), app_state.encoder);
     }
     if (btn == &btn2) {
-      app_state.encoder += ENC_STEP_CLICK;
+      app_state.encoder += (btn2_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK);
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", (btn2_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK), app_state.encoder);
     }
   }
   if (state == BUTTON_PRESSED) {
+    if (btn == &btn1) { btn1_down = true; btn1_repeat = false; }
+    if (btn == &btn2) { btn2_down = true; btn2_repeat = false; }
   }
   if (state == BUTTON_RELEASED) {
+    if (btn == &btn1) { btn1_down = false; btn1_repeat = false; }
+    if (btn == &btn2) { btn2_down = false; btn2_repeat = false; }
   }
   // Notify screenTask
   if (notify_value && false) {
