@@ -37,7 +37,8 @@ TaskHandle_t button;
 // mqttMessage eventMessage;
 static SemaphoreHandle_t pcf_int_sem;
 static bool last_stop = false, last_flush = false, last_run = false;
-static const int ENC_STEP_TICKS = 10; // шаг изменения уставки энкодера кнопками
+static const int ENC_STEP_CLICK = 1;  // шаг по клику
+static const int ENC_STEP_LONG  = 10; // шаг по долгому удержанию
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -50,11 +51,11 @@ static void on_button(button_t *btn, button_state_t state) {
     // Авто-щёлканье реализуем силами библиотеки (autorepeat=true):
     // каждое событие LONG во время удержания даёт один шаг
     if (btn == &btn1) {
-      app_state.encoder -= ENC_STEP_TICKS;
+      app_state.encoder -= ENC_STEP_LONG;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
     } else if (btn == &btn2) {
-      app_state.encoder += ENC_STEP_TICKS;
+      app_state.encoder += ENC_STEP_LONG;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
     }
@@ -78,19 +79,20 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
-    // Кнопки платы работают как замена энкодера (одиночный шаг по клику):
+    // Кнопки платы работают как замена энкодера:
+    // по клику — шаг ±1
     // btn1 (GPIO0) — уменьшить, btn2 (GPIO35) — увеличить
     if (btn == &btn1) {
-      app_state.encoder -= ENC_STEP_TICKS;
+      app_state.encoder -= ENC_STEP_CLICK;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_TICKS, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
     }
     if (btn == &btn2) {
-      app_state.encoder += ENC_STEP_TICKS;
+      app_state.encoder += ENC_STEP_CLICK;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_TICKS, app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
     }
   }
   if (state == BUTTON_PRESSED) {
