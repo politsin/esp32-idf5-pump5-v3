@@ -56,17 +56,17 @@ static void on_button(button_t *btn, button_state_t state) {
   }
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Долгое нажатие: один раз шаг ±20 (без репита)
+    // Долгое нажатие: шаг ±10; с включённым autorepeat библиотека будет присылать повторяющиеся LONG-события
     if (btn == &btn1) {
-      app_state.encoder -= 20;
+      app_state.encoder -= 10;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift long -= 20 -> %ld", app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift long -= 10 -> %ld", app_state.encoder);
     } else if (btn == &btn2) {
-      app_state.encoder += 20;
+      app_state.encoder += 10;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift long += 20 -> %ld", app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift long += 10 -> %ld", app_state.encoder);
     }
   }
   if (state == BUTTON_CLICKED) {
@@ -119,7 +119,7 @@ void buttonTask(void *pvParam) {
   btn1.gpio = BUTTON_PIN1;
   btn1.pressed_level = 0;
   btn1.internal_pull = true;
-  btn1.autorepeat = false;
+  btn1.autorepeat = true;
   btn1.callback = on_button;
 
   // Second button connected between GPIO and GND (активный низ)
@@ -127,7 +127,7 @@ void buttonTask(void *pvParam) {
   btn2.gpio = BUTTON_PIN2;
   btn2.pressed_level = 0;
   btn2.internal_pull = false; // GPIO35: нет внутренних подтяжек
-  btn2.autorepeat = false;
+  btn2.autorepeat = true;
   btn2.callback = on_button;
 
   // STOP/FLUSH/RUN теперь читаем через PCF8575 (виртуальные кнопки)
