@@ -171,8 +171,8 @@ void counterTask(void *pvParam) {
   }
   if (pcnt_ready && pcnt_channel_set_edge_action(
         pcnt_chan,
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE,  // считаем по фронту вверх
-        PCNT_CHANNEL_EDGE_ACTION_HOLD) != ESP_OK) { // спад игнорируем
+        PCNT_CHANNEL_EDGE_ACTION_HOLD,      // фронт вверх игнорируем
+        PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) { // считаем по фронту вниз
     pcnt_ready = false;
   }
   if (pcnt_ready && pcnt_channel_set_level_action(
@@ -188,7 +188,12 @@ void counterTask(void *pvParam) {
   } else {
     ESP_LOGE(COUNTER_TAG, "PCNT init failed; counter will not be used");
     // Фоллбэк: используем GPIO прерывание по фронту вверх с программным антидребезгом
-    gpio_set_intr_type(DI, GPIO_INTR_POSEDGE);
+    // Перед добавлением обработчика убеждаемся, что сервис ISR установлен
+    esp_err_t isr_res = gpio_install_isr_service(0);
+    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
+      ESP_LOGE(COUNTER_TAG, "gpio_install_isr_service failed: 0x%x", (unsigned)isr_res);
+    }
+    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
     auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
       TickType_t now = xTaskGetTickCountFromISR();
       if (now - last_di_isr_tick < pdMS_TO_TICKS(2)) return; // ~2 мс антидребезг
