@@ -140,22 +140,6 @@ void counterTask(void *pvParam) {
   gpio_pullup_en(DI);
   gpio_pulldown_dis(DI);
   gpio_set_intr_type(DI, GPIO_INTR_DISABLE);
-  // Устанавливаем GPIO ISR (будет работать параллельно PCNT как надёжный фоллбэк)
-  {
-    esp_err_t isr_res = gpio_install_isr_service(0);
-    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
-      // молча продолжаем, если уже установлен или ошибка не критична
-    }
-    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
-    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
-      TickType_t now = xTaskGetTickCountFromISR();
-      if (now - last_di_isr_tick < pdMS_TO_TICKS(2)) return; // ~2 мс антидребезг
-      last_di_isr_tick = now;
-      gpio_ticks_pending++;
-    };
-    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
-    gpio_intr_enable(DI);
-  }
   // Создаём юнит PCNT
   static pcnt_unit_handle_t pcnt_unit = NULL;
   static pcnt_channel_handle_t pcnt_chan = NULL;
@@ -169,9 +153,9 @@ void counterTask(void *pvParam) {
   if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
     pcnt_ready = false;
   }
-  // Глитч-фильтр: игнор импульсов короче ~12 мкс
+  // Глитч-фильтр: игнор импульсов короче ~5 мс
   pcnt_glitch_filter_config_t filter_cfg = {
-      .max_glitch_ns = 50000, // ~50 мкс для подавления дребезга
+      .max_glitch_ns = 5000000, // ~5 мс для подавления дребезга
   };
   if (pcnt_ready) {
     esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
@@ -205,7 +189,20 @@ void counterTask(void *pvParam) {
     pcnt_unit_clear_count(pcnt_unit);
     pcnt_unit_start(pcnt_unit);
   } else {
-    // PCNT не готов — остаёмся только на GPIO ISR (уже установлен выше)
+    // PCNT не готов — включаем GPIO ISR фоллбэк по спаду
+    esp_err_t isr_res = gpio_install_isr_service(0);
+    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
+      // продолжаем, даже если сервис уже установлен
+    }
+    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
+    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
+      TickType_t now = xTaskGetTickCountFromISR();
+      if (now - last_di_isr_tick < pdMS_TO_TICKS(5)) return; // ~5 мс антидребезг
+      last_di_isr_tick = now;
+      gpio_ticks_pending++;
+    };
+    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
+    gpio_intr_enable(DI);
   }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
@@ -236,7 +233,7 @@ void counterTask(void *pvParam) {
       .mode = GPIO_MODE_INPUT,
       .pull_up_en = GPIO_PULLUP_ENABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_NEGEDGE
+      .intr_type = GPIO_INTR_DISABLE
   };
   gpio_config(&di_config);
 
