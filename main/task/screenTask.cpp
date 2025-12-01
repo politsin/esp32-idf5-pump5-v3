@@ -163,7 +163,8 @@ void screenTask(void *pvParam) {
   };
   // Индикаторы статусов слева направо: Зелёный (START/RUN), Жёлтый (FLUSH), Красный (STOP)
   lv_obj_t *sqGreen  = createFig(lv_color_hex(0x00FF00), btnX_start);
-  lv_obj_t *sqYellow = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
+  // Средний индикатор (FLUSH) делаем СИНИМ на экране (с учётом текущего цветопорядка)
+  lv_obj_t *sqYellow = createFig(lv_color_hex(0xFF0000), btnX_start + btnSpacing);
   // Под текущее отображение цветов: используем код, который даст на экране красный
   lv_obj_t *sqRed    = createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
   auto setWeak = [](lv_obj_t *obj){
