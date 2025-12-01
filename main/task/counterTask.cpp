@@ -139,7 +139,7 @@ void counterTask(void *pvParam) {
   static pcnt_channel_handle_t pcnt_chan = NULL;
   bool pcnt_ready = true;
   pcnt_unit_config_t unit_cfg = {
-      .low_limit = 0,
+      .low_limit = -32768,
       .high_limit = 32767,
       .intr_priority = 0,
       .flags = {}
