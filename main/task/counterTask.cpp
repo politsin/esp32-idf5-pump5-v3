@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
-static constexpr Pintype DI = GPIO_NUM_13;
+static constexpr Pintype DI = GPIO_NUM_36;
 static constexpr Pintype PUMP = GPIO_NUM_25;
 // Клапаны перенесены на PCF8575 (P0..P4), GPIO больше не используются
 #include "sdkconfig.h"
@@ -231,7 +231,7 @@ void counterTask(void *pvParam) {
   gpio_config_t di_config = {
       .pin_bit_mask = (1ULL << DI),
       .mode = GPIO_MODE_INPUT,
-      .pull_up_en = GPIO_PULLUP_ENABLE,
+      .pull_up_en = GPIO_PULLUP_DISABLE,   // GPIO36: вход без внутренних подтяжек
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
       .intr_type = GPIO_INTR_ANYEDGE
   };
