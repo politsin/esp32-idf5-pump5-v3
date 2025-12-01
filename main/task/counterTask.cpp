@@ -133,6 +133,8 @@ void counterTask(void *pvParam) {
   // Настраиваем вход DI: счётчик импульсов через PCNT (новый драйвер) с аппаратным антидребезгом
   gpio_pad_select_gpio(DI);
   gpio_set_direction(DI, GPIO_MODE_INPUT);
+  gpio_pullup_en(DI);
+  gpio_pulldown_dis(DI);
   gpio_set_intr_type(DI, GPIO_INTR_DISABLE);
   // Создаём юнит PCNT
   static pcnt_unit_handle_t pcnt_unit = NULL;
