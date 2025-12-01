@@ -1,6 +1,7 @@
 // #include <counterTask.h> WTF o.O
 // Counter #22 #19.
 #include "driver/gpio.h"
+#include "driver/pcnt.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
@@ -193,14 +194,29 @@ void counterTask(void *pvParam) {
   // Все клапаны выключены через PCF8575
   ioexp_set_all_valves(false);
 
-  // Verify that the GPIO ISR service is installed
-  // Устанавливается один раз в encoderTask; здесь не дублируем
-  // DI Настраиваем прерывания
+  // Настраиваем вход DI: счётчик импульсов через PCNT с аппаратным антидребезгом
   gpio_pad_select_gpio(DI);
   gpio_set_direction(DI, GPIO_MODE_INPUT);
-  gpio_set_intr_type(DI, GPIO_INTR_ANYEDGE);
-  // Устанавливаем обработчик прерывания
-  gpio_isr_handler_add(DI, counter_isr_handler, NULL);
+  gpio_set_intr_type(DI, GPIO_INTR_DISABLE);
+  // Конфиг PCNT: считаем по спадающему фронту (neg edge), без управления направлением
+  pcnt_config_t pcnt_cfg = {};
+  pcnt_cfg.pulse_gpio_num = DI;
+  pcnt_cfg.ctrl_gpio_num = PCNT_PIN_NOT_USED;
+  pcnt_cfg.channel = PCNT_CHANNEL_0;
+  pcnt_cfg.unit = PCNT_UNIT_0;
+  pcnt_cfg.pos_mode = PCNT_COUNT_DIS;  // нарастающий фронт игнорируем
+  pcnt_cfg.neg_mode = PCNT_COUNT_INC;  // считаем по спаду (датчик тянет к GND)
+  pcnt_cfg.lctrl_mode = PCNT_MODE_KEEP;
+  pcnt_cfg.hctrl_mode = PCNT_MODE_KEEP;
+  pcnt_cfg.counter_h_lim = 32767;
+  pcnt_cfg.counter_l_lim = 0;
+  pcnt_unit_config(&pcnt_cfg);
+  // Включаем антидребезг PCNT: игнорировать импульсы короче ~12 мкс (1023 тика)
+  pcnt_set_filter_value(PCNT_UNIT_0, 1023);
+  pcnt_filter_enable(PCNT_UNIT_0);
+  pcnt_counter_pause(PCNT_UNIT_0);
+  pcnt_counter_clear(PCNT_UNIT_0);
+  pcnt_counter_resume(PCNT_UNIT_0);
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
   // config->get_item("steps", app_config.steps);
@@ -235,6 +251,48 @@ void counterTask(void *pvParam) {
   gpio_config(&di_config);
 
   while (true) {
+    // Считываем импульсы с PCNT и обновляем счётчик воды
+    int16_t pcnt_val = 0;
+    pcnt_get_counter_value(PCNT_UNIT_0, &pcnt_val);
+    if (pcnt_val != 0) {
+      pcnt_counter_clear(PCNT_UNIT_0);
+      rot += (int32_t)pcnt_val;
+      app_state.water_current = rot;
+      // Проверяем достижение цели и переключение клапанов (перенесено из ISR)
+      if (pumpOn && !flush_mode) {
+        int32_t target = valve_targets[current_valve - 1];
+        if (rot >= target) {
+          TickType_t current_time = xTaskGetTickCount();
+          TickType_t valve_time = current_time - valve_start_time;
+          app_state.valve_times[current_valve - 1] = valve_time;
+          valve_work_times[current_valve - 1] = valve_time;
+          valve_start_time = current_time;
+          pending_close_valve = current_valve;
+          current_valve++;
+          if (current_valve > NUM_VALVES) current_valve = 1;
+          app_state.valve = current_valve;
+          app_state.banks_count++;
+          pending_open_valve = current_valve;
+          valve_switch_pending = true;
+          xTaskNotify(counter, VALVE_SWITCH_BIT, eSetBits);
+          if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
+            xTaskNotify(counter, PROGRESS_REPORT_BIT, eSetBits);
+          }
+          rot = 0;
+          pump_start_counter = 0;
+          pump_start_time = xTaskGetTickCount();
+          last_correction_rot = 0;
+          last_correction_time = xTaskGetTickCount();
+          valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+          accumulated_overpoured_ticks[current_valve - 1] = 0;
+          xTaskNotify(screen, UPDATE_BIT, eSetBits);
+        } else {
+          if (rot == 0) {
+            valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+          }
+        }
+      }
+    }
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
       if (notification & VALVE_SWITCH_BIT) {
