@@ -416,7 +416,8 @@ static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
   int offsetx2 = area->x2;
   int offsety1 = area->y1;
   int offsety2 = area->y2;
-  display_push_colors(offsetx1, offsety1, offsetx2 + 1, offsety2 + 1,
+  // Передаём координаты как есть (x_start,y_start,x_end,y_end) без +1
+  display_push_colors(offsetx1, offsety1, offsetx2, offsety2,
                       (uint16_t *)color_map);
 }
 
