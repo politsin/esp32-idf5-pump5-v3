@@ -122,10 +122,10 @@ void buttonTask(void *pvParam) {
   btn1.autorepeat = false;
   btn1.callback = on_button;
 
-  // Second button connected between GPIO and +3.3V
-  // pressed logic level 1, autorepeat enabled
+  // Second button connected between GPIO and GND (активный низ)
+  // pressed logic level 0, autorepeat disabled
   btn2.gpio = BUTTON_PIN2;
-  btn2.pressed_level = 1;
+  btn2.pressed_level = 0;
   btn2.internal_pull = false; // GPIO35: нет внутренних подтяжек
   btn2.autorepeat = false;
   btn2.callback = on_button;
