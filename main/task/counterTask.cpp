@@ -256,6 +256,8 @@ void counterTask(void *pvParam) {
       // «В лоб»: лог каждого тика через PCNT
       ESP_LOGW(COUNTER_TAG, "TICK via PCNT: +%d -> rot=%ld, DI=%d", pcnt_val, (long)rot, di_now);
       app_state.water_current = rot;
+      // Обновляем экран сразу при изменении счётчика
+      xTaskNotify(screen, UPDATE_BIT, eSetBits);
       // Проверяем достижение цели и переключение клапанов (перенесено из ISR)
       if (pumpOn && !flush_mode) {
         int32_t target = valve_targets[current_valve - 1];
@@ -297,6 +299,8 @@ void counterTask(void *pvParam) {
         ESP_LOGW(COUNTER_TAG, "TICK via GPIO ISR: rot=%ld, DI=%d", (long)rot, di_now);
       }
       app_state.water_current = rot;
+      // Обновляем экран сразу при изменении счётчика
+      xTaskNotify(screen, UPDATE_BIT, eSetBits);
       if (pumpOn && !flush_mode) {
         int32_t target = valve_targets[current_valve - 1];
         if (rot >= target) {
