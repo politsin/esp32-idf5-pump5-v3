@@ -38,8 +38,6 @@ TaskHandle_t button;
 static SemaphoreHandle_t pcf_int_sem;
 static bool last_stop = false, last_flush = false, last_run = false;
 static const int ENC_STEP_TICKS = 10; // шаг изменения уставки энкодера кнопками
-static volatile bool btn1_long_active = false;
-static volatile bool btn2_long_active = false;
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -49,9 +47,17 @@ static void IRAM_ATTR pcf_int_isr(void* arg) {
 static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Долгое удержание: начать авто-щёлканье по 10, пока держим
-    if (btn == &btn1) btn1_long_active = true; // уменьшение
-    if (btn == &btn2) btn2_long_active = true; // увеличение
+    // Авто-щёлканье реализуем силами библиотеки (autorepeat=true):
+    // каждое событие LONG во время удержания даёт один шаг
+    if (btn == &btn1) {
+      app_state.encoder -= ENC_STEP_TICKS;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+    } else if (btn == &btn2) {
+      app_state.encoder += ENC_STEP_TICKS;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+    }
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn_stop) {
@@ -72,8 +78,8 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
-    // Кнопки платы работают как замена энкодера:
-    // btn1 (GPIO0, нижняя) — уменьшить сдвиг, btn2 (GPIO35, верхняя) — увеличить
+    // Кнопки платы работают как замена энкодера (одиночный шаг по клику):
+    // btn1 (GPIO0) — уменьшить, btn2 (GPIO35) — увеличить
     if (btn == &btn1) {
       app_state.encoder -= ENC_STEP_TICKS;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
@@ -90,9 +96,6 @@ static void on_button(button_t *btn, button_state_t state) {
   if (state == BUTTON_PRESSED) {
   }
   if (state == BUTTON_RELEASED) {
-    // Останавливаем авто-щёлканье при отпускании
-    if (btn == &btn1) btn1_long_active = false;
-    if (btn == &btn2) btn2_long_active = false;
   }
   // Notify screenTask
   if (notify_value && false) {
@@ -117,7 +120,7 @@ void buttonTask(void *pvParam) {
   btn2.gpio = BUTTON_PIN2;
   btn2.pressed_level = 1;
   btn2.internal_pull = false; // GPIO35: нет внутренних подтяжек
-  btn2.autorepeat = false;
+  btn2.autorepeat = true;
   btn2.callback = on_button;
 
   // STOP/FLUSH/RUN теперь читаем через PCF8575 (виртуальные кнопки)
@@ -138,9 +141,6 @@ void buttonTask(void *pvParam) {
   gpio_isr_handler_add(PCF8575_INT_GPIO, pcf_int_isr, NULL);
 
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
-  TickType_t last_repeat1 = 0;
-  TickType_t last_repeat2 = 0;
-  const TickType_t repeat_period = pdMS_TO_TICKS(150); // период авто-щёлканья при удержании
   while (true) {
     // Ждём событие от INT или таймаут (для страховки/дребезга)
     if (pcf_int_sem) (void)xSemaphoreTake(pcf_int_sem, xBlockTime);
@@ -158,19 +158,6 @@ void buttonTask(void *pvParam) {
       last_run = run_p;
     }
 
-    // Авто-щёлканье уставки при удержании кнопок
-    TickType_t now = xTaskGetTickCount();
-    if (btn1_long_active && (now - last_repeat1 >= repeat_period)) {
-      last_repeat1 = now;
-      app_state.encoder -= ENC_STEP_TICKS;
-      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-    }
-    if (btn2_long_active && (now - last_repeat2 >= repeat_period)) {
-      last_repeat2 = now;
-      app_state.encoder += ENC_STEP_TICKS;
-      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
-      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-    }
+    // Авто-щёлканье теперь обрабатывается библиотекой (autorepeat + BUTTON_PRESSED_LONG)
   }
 }
