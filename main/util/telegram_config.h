@@ -1,9 +1,7 @@
 #ifndef TELEGRAM_CONFIG_H
 #define TELEGRAM_CONFIG_H
 
-// Конфигурация Telegram бота
-// Проверяем, что токен не содержит лишних символов
-#define TELEGRAM_BOT_TOKEN "5039588685:AAFrqiYBHZvENSFfaDBOH6tQ-JAPs4mCgN8"
+// Конфигурация Telegram (через прокси)
 // Текущий канал (через прокси используем алиас 'log')
 #define TELEGRAM_CHAT_ID "log"
 // ID треда/топика (передаём числом в прокси)
@@ -22,12 +20,7 @@
 // Иконка для идентификации наливайки (можно менять для разных устройств)
 #define TELEGRAM_DEVICE_ICON "🚰"
 
-// URL для отправки сообщений в Telegram (без лишнего слеша)
-#define TELEGRAM_API_URL "https://api.telegram.org/bot" TELEGRAM_BOT_TOKEN "/sendMessage"
 // Прокси-эндпоинт (Яндекс Функция) для отправки сообщений
 #define TELEGRAM_PROXY_URL "https://functions.yandexcloud.net/d4ejjat9rer6gghjvpbl"
-
-// Отладочная информация
-#define TELEGRAM_DEBUG_INFO "Bot Token Length: " STRINGIFY(sizeof(TELEGRAM_BOT_TOKEN))
 
 #endif // TELEGRAM_CONFIG_H 
