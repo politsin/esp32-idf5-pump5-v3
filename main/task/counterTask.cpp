@@ -451,6 +451,8 @@ void counterTask(void *pvParam) {
         flush_mode = false;
         
         ESP_LOGW(COUNTER_TAG, "Flush completed!");
+        // По завершении промывки переходим в STOP (для статуса на экране)
+        xTaskNotify(screen, BTN_STOP_BIT, eSetBits);
         continue; // Переходим к следующей итерации цикла
         
         flush_stopped:

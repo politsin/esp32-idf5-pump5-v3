@@ -161,9 +161,33 @@ void screenTask(void *pvParam) {
     lv_obj_align(fig, LV_ALIGN_TOP_LEFT, x, btnY_bottom);
     return fig;
   };
-  lv_obj_t *btnRed = createFig(lv_color_hex(0xFF0000), btnX_start);
-  lv_obj_t *btnYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
-  createFig(lv_color_hex(0x0000FF), btnX_start + btnSpacing * 2);
+  // Индикаторы статусов слева направо: Синий (RUN), Жёлтый (FLUSH), Красный (STOP)
+  lv_obj_t *sqBlue = createFig(lv_color_hex(0x0000FF), btnX_start);
+  lv_obj_t *sqYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
+  lv_obj_t *sqRed  = createFig(lv_color_hex(0xFF0000), btnX_start + btnSpacing * 2);
+  auto setWeak = [](lv_obj_t *obj){
+    lv_obj_set_style_bg_opa(obj, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_white(), LV_PART_MAIN);
+  };
+  auto setStrong = [](lv_obj_t *obj){
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(obj, lv_color_white(), LV_PART_MAIN);
+  };
+  // На старте все слабые/серые
+  setWeak(sqBlue);
+  setWeak(sqYell);
+  setWeak(sqRed);
+  enum Status { ST_IDLE, ST_RUN, ST_FLUSH, ST_STOP };
+  Status status = ST_IDLE;
+  auto applyStatus = [&](Status st){
+    status = st;
+    setWeak(sqBlue);
+    setWeak(sqYell);
+    setWeak(sqRed);
+    if (st == ST_RUN)   setStrong(sqBlue);
+    if (st == ST_FLUSH) setStrong(sqYell);
+    if (st == ST_STOP)  setStrong(sqRed);
+  };
 
   uint32_t notification = 0;
   TickType_t lastUpdate = xTaskGetTickCount();
@@ -173,6 +197,10 @@ void screenTask(void *pvParam) {
     if (!app_state.is_on) {
       uint32_t notif_now = 0;
       if (xTaskNotifyWait(0x0, ULONG_MAX, &notif_now, 0) == pdTRUE) {
+        // Обновляем статус-индикаторы
+        if (notif_now & BTN_RUN_BIT)   applyStatus(ST_RUN);
+        if (notif_now & BTN_FLUSH_BIT) applyStatus(ST_FLUSH);
+        if (notif_now & BTN_STOP_BIT)  applyStatus(ST_STOP);
         if (notif_now & (ENCODER_CHANGED_BIT | UPDATE_BIT | BTN1_BUTTON_CLICKED_BIT | BTN2_BUTTON_CLICKED_BIT | BTN_STOP_BIT | BTN_RUN_BIT)) {
           // Форсируем немедленное обновление экрана по тем же правилам, что в периодическом апдейте
           char labelText[192];
@@ -270,22 +298,18 @@ void screenTask(void *pvParam) {
         }
         if (notification & BTN1_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Yellow button clicked");
-          lv_obj_set_style_border_color(btnYell, lv_color_hex(0xFF0000), LV_PART_MAIN);
           strcat(labelText, "\nYellow Clicked");
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         if (notification & BTN2_BUTTON_CLICKED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Red button pressed");
           strcat(labelText, "\nRed Pressed");
-          lv_obj_set_style_border_color(btnRed, lv_color_hex(0xFF0000), LV_PART_MAIN);
           vTaskDelay(pdMS_TO_TICKS(100));
         }
-        if (notification & BTN_STOP_BIT) {
-          lv_obj_set_style_border_color(btnYell, lv_color_white(), LV_PART_MAIN);
-        }
-        if (notification & BTN_RUN_BIT) {
-          lv_obj_set_style_border_color(btnRed, lv_color_white(), LV_PART_MAIN);
-        }
+        // Применяем статус-индикаторы при RUN/FLUSH/STOP
+        if (notification & BTN_RUN_BIT)   applyStatus(ST_RUN);
+        if (notification & BTN_FLUSH_BIT) applyStatus(ST_FLUSH);
+        if (notification & BTN_STOP_BIT)  applyStatus(ST_STOP);
         if (notification & COUNTER_FINISHED_BIT) {
           ESP_LOGI(SCREEN_TAG, "Counter Finished");
           strcat(labelText, "\nCounter Finished");
