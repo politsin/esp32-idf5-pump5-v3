@@ -157,7 +157,7 @@ void screenTask(void *pvParam) {
     lv_obj_set_size(fig, 25, 25); // Было 30x30, стало 25x25 (уменьшили размер)
     lv_obj_set_style_bg_color(fig, color, LV_PART_MAIN);
     lv_obj_set_style_border_color(fig, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(fig, 3, LV_PART_MAIN);
+    lv_obj_set_style_border_width(fig, 1, LV_PART_MAIN);
     lv_obj_align(fig, LV_ALIGN_TOP_LEFT, x, btnY_bottom);
     return fig;
   };
@@ -166,7 +166,7 @@ void screenTask(void *pvParam) {
   lv_obj_t *sqYell = createFig(lv_color_hex(0xFFFF00), btnX_start + btnSpacing);
   lv_obj_t *sqRed  = createFig(lv_color_hex(0xFF0000), btnX_start + btnSpacing * 2);
   auto setWeak = [](lv_obj_t *obj){
-    lv_obj_set_style_bg_opa(obj, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_10, LV_PART_MAIN);
     lv_obj_set_style_border_color(obj, lv_color_white(), LV_PART_MAIN);
   };
   auto setStrong = [](lv_obj_t *obj){
