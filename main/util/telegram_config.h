@@ -19,6 +19,8 @@
 
 // URL для отправки сообщений в Telegram (без лишнего слеша)
 #define TELEGRAM_API_URL "https://api.telegram.org/bot" TELEGRAM_BOT_TOKEN "/sendMessage"
+// Прокси-эндпоинт (Яндекс Функция) для отправки сообщений
+#define TELEGRAM_PROXY_URL "https://functions.yandexcloud.net/d4ejjat9rer6gghjvpbl"
 
 // Отладочная информация
 #define TELEGRAM_DEBUG_INFO "Bot Token Length: " STRINGIFY(sizeof(TELEGRAM_BOT_TOKEN))

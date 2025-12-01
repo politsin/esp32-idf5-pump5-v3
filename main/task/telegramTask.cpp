@@ -76,15 +76,25 @@ static esp_err_t telegram_send_message_internal(const telegram_message_t* m)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Создаем сообщение с иконкой устройства
+    // Создаем сообщение с иконкой устройства (избегаем -Wformat-truncation)
     char full_message[512];
-    snprintf(full_message, sizeof(full_message), "%s %s", TELEGRAM_DEVICE_ICON, m->message);
+    int n = snprintf(full_message, sizeof(full_message), "%s ", TELEGRAM_DEVICE_ICON);
+    if (n < 0) n = 0;
+    if ((size_t)n >= sizeof(full_message)) n = (int)sizeof(full_message) - 1;
+    size_t avail = sizeof(full_message) - (size_t)n;
+    // Пишем не более avail-1 символов из текста
+    snprintf(full_message + n, avail, "%.*s", (int)avail - 1, m->message);
 
-    // Создаем JSON для отправки
+    // Создаем JSON для отправки через прокси
+    // Формат: { "channel": "...", "text": "...", "thread_id": 2 }
     cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "chat_id", (m->chat_id[0] ? m->chat_id : TELEGRAM_CHAT_ID));
-    cJSON_AddStringToObject(json, "message_thread_id", (m->thread_id[0] ? m->thread_id : TELEGRAM_MESSAGE_THREAD_ID));
+    cJSON_AddStringToObject(json, "channel", (m->chat_id[0] ? m->chat_id : TELEGRAM_CHAT_ID));
     cJSON_AddStringToObject(json, "text", full_message);
+    // thread_id как число, если строка содержит цифры
+    const char* thr = (m->thread_id[0] ? m->thread_id : TELEGRAM_MESSAGE_THREAD_ID);
+    int thr_num = 0;
+    for (const char* p = thr; *p; ++p) { if (*p < '0' || *p > '9') { thr_num = -1; break; } thr_num = thr_num * 10 + (*p - '0'); }
+    if (thr_num >= 0) cJSON_AddNumberToObject(json, "thread_id", thr_num);
     
     char *json_string = cJSON_Print(json);
     cJSON_Delete(json);
@@ -96,7 +106,7 @@ static esp_err_t telegram_send_message_internal(const telegram_message_t* m)
 
     // Настройка HTTP клиента с SSL без верификации
     esp_http_client_config_t config = {};
-    config.url = TELEGRAM_API_URL;
+    config.url = TELEGRAM_PROXY_URL;
     config.method = HTTP_METHOD_POST;
     config.event_handler = http_event_handler;
     config.timeout_ms = 10000;
