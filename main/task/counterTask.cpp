@@ -152,7 +152,16 @@ void counterTask(void *pvParam) {
   if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
     pcnt_ready = false;
   }
-  // Антидребезг (glitch filter) отключён по требованию: оставляем только подтяжку
+  // Минимальный антидребезг для PCNT: 1 мкс (высокая скорость счёта)
+  pcnt_glitch_filter_config_t filter_cfg = {
+      .max_glitch_ns = 1000, // ~1 мкс
+  };
+  if (pcnt_ready) {
+    esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+    if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
+      pcnt_ready = false;
+    }
+  }
   // Канал: считаем по спадающему фронту (датчик тянет к GND)
   pcnt_chan_config_t chan_cfg = {
       .edge_gpio_num = DI,
