@@ -37,6 +37,7 @@ TaskHandle_t button;
 // mqttMessage eventMessage;
 static SemaphoreHandle_t pcf_int_sem;
 static bool last_stop = false, last_flush = false, last_run = false;
+static const int ENC_STEP_TICKS = 10; // шаг изменения уставки энкодера кнопками
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -46,8 +47,12 @@ static void IRAM_ATTR pcf_int_isr(void* arg) {
 static void on_button(button_t *btn, button_state_t state) {
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    if (btn == &btn1 || btn == &btn_stop) {
-      ESP_LOGW(BUTTON_TAG, "RED PRESSED LONG");
+    // Долгое удержание нижней кнопки (GPIO0) — сброс сдвига уставки в 0
+    if (btn == &btn1) {
+      app_state.encoder = 0;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      telegram_send_message("Сдвиг уставки сброшен на 0");
     }
   }
   if (state == BUTTON_CLICKED) {
@@ -69,17 +74,19 @@ static void on_button(button_t *btn, button_state_t state) {
       xTaskNotify(counter, BTN_RUN_BIT, eSetBits);
       telegram_send_button_press_with_icon("🟢", "START");
     }
+    // Кнопки платы работают как замена энкодера:
+    // btn1 (GPIO0, нижняя) — уменьшить сдвиг, btn2 (GPIO35, верхняя) — увеличить
     if (btn == &btn1) {
-      ESP_LOGI(BUTTON_TAG, "Btn1 CLICK");
-      xTaskNotify(screen, BTN1_BUTTON_CLICKED_BIT, eSetBits);
-      xTaskNotify(counter, BTN1_BUTTON_CLICKED_BIT, eSetBits);
-      telegram_send_button_press("Button 1");
+      app_state.encoder -= ENC_STEP_TICKS;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_TICKS, app_state.encoder);
     }
     if (btn == &btn2) {
-      ESP_LOGI(BUTTON_TAG, "Btn2 CLICK");
-      xTaskNotify(screen, BTN2_BUTTON_CLICKED_BIT, eSetBits);
-      xTaskNotify(counter, BTN2_BUTTON_CLICKED_BIT, eSetBits);
-      telegram_send_button_press("Button 2");
+      app_state.encoder += ENC_STEP_TICKS;
+      xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+      xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_TICKS, app_state.encoder);
     }
   }
   if (state == BUTTON_PRESSED) {

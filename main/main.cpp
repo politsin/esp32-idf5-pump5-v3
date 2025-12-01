@@ -80,6 +80,9 @@ extern "C" void app_main(void) {
     }
   }
 
+  xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
+  ESP_LOGI(MAINTAG, "Screen task created");
+
   // Инициализация WiFi
   ESP_LOGI(MAINTAG, "Starting WiFi initialization...");
   // Запускаем WiFi инициализацию в отдельной задаче, чтобы не блокировать основной поток
@@ -108,10 +111,10 @@ extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "Button task created");
   xTaskCreate(counterTask, "counter", min * 10, NULL, 1, &counter);
   ESP_LOGI(MAINTAG, "Counter task created");
-  xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
-  ESP_LOGI(MAINTAG, "Encoder task created");
-  xTaskCreatePinnedToCore(screenTask, "screen", min * 10, NULL, 1, &screen, 1);
-  ESP_LOGI(MAINTAG, "Screen task created");
+  // Энкодера пока нет — задачу не запускаем
+  // xTaskCreate(encoderTask, "encoder", min * 6, NULL, 1, &encoder);
+  ESP_LOGI(MAINTAG, "Encoder task skipped (no hardware yet)");
+
   xTaskCreate(telegramTask, "telegram", min * 8, NULL, 5, &telegramTaskHandle);
   ESP_LOGI(MAINTAG, "Telegram task created");
   xTaskCreate(timeTask, "time", min * 10, NULL, 1, &timeTaskHandle);
