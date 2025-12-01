@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 typedef gpio_num_t Pintype;
-static constexpr Pintype DI = GPIO_NUM_27;
+static constexpr Pintype DI = GPIO_NUM_26;
 static constexpr Pintype PUMP = GPIO_NUM_25;
 // Клапаны перенесены на PCF8575 (P0..P4), GPIO больше не используются
 #include "sdkconfig.h"
