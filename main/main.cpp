@@ -58,6 +58,9 @@ extern "C" void app_main(void) {
   esp_log_level_set("wifi_init", ESP_LOG_WARN);
   esp_log_level_set("WIFI_MANAGER", ESP_LOG_WARN);
   esp_log_level_set("TELEGRAM_MANAGER", ESP_LOG_WARN);
+  esp_log_level_set("TELEGRAM_TASK", ESP_LOG_WARN);
+  esp_log_level_set("I2C", ESP_LOG_WARN);
+  esp_log_level_set("IOEXP", ESP_LOG_WARN);
   esp_log_level_set("gpio", ESP_LOG_WARN);
   // esp_log_level_set("BUTTON", ESP_LOG_WARN);
   // esp_log_level_set("COUNTER", ESP_LOG_WARN);
