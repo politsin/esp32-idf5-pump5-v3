@@ -111,13 +111,13 @@ void screenTask(void *pvParam) {
   lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), LV_PART_MAIN);
   lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
 
-  // Создаём отдельные label для P1–P5 справа
-  lv_obj_t *valve_labels[5];
-  lv_obj_t *valve_indicators[5]; // Кружочки для индикации активных клапанов
+  // Создаём отдельные label для P1–P4 справа
+  lv_obj_t *valve_labels[NUM_VALVES];
+  lv_obj_t *valve_indicators[NUM_VALVES]; // Кружочки для индикации активных клапанов
   int valve_label_x = 135; // Было 120, стало 135 (ещё правее на 3 символа)
   int valve_label_y_start = 8;
   int valve_label_y_step = 18;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < NUM_VALVES; i++) {
     // Создаём кружочек-индикатор
     valve_indicators[i] = lv_obj_create(lv_scr_act());
     lv_obj_set_size(valve_indicators[i], 8, 8);
@@ -138,11 +138,11 @@ void screenTask(void *pvParam) {
   // Создаём label для общей суммы времени
   lv_obj_t *total_time_label = lv_label_create(lv_scr_act());
   lv_obj_set_style_text_color(total_time_label, lv_color_hex(0xffff00), LV_PART_MAIN); // Жёлтый цвет для выделения
-  lv_obj_align(total_time_label, LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + 5 * valve_label_y_step + 10);
+  lv_obj_align(total_time_label, LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + NUM_VALVES * valve_label_y_step + 10);
   
   // Инициализируем текст общей суммы
   uint32_t total_time = 0;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < NUM_VALVES; i++) {
     total_time += app_state.valve_times[i];
   }
   char total_txt[32];
@@ -229,7 +229,7 @@ void screenTask(void *pvParam) {
         }
         if (app_lvgl_lock(LVGL_TASK_MAX_DELAY_MS)) {
           lv_label_set_text(label, labelText);
-          for (int i = 0; i < 5; i++) {
+          for (int i = 0; i < NUM_VALVES; i++) {
             char txt[16];
             snprintf(txt, sizeof(txt), "P%d: %.2f s", i+1, (double)app_state.valve_times[i] / 100.0);
             lv_label_set_text(valve_labels[i], txt);
@@ -244,7 +244,7 @@ void screenTask(void *pvParam) {
           
           // Обновляем общую сумму времени
           uint32_t total_time = 0;
-          for (int i = 0; i < 5; i++) {
+          for (int i = 0; i < NUM_VALVES; i++) {
             total_time += app_state.valve_times[i];
           }
           char total_txt[32];

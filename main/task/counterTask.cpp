@@ -27,14 +27,13 @@ static volatile bool valve1On = false;
 static volatile bool valve2On = false;
 static volatile bool valve3On = false;
 static volatile bool valve4On = false;
-static volatile bool valve5On = false;
 
 // Переменные для отслеживания времени клапанов
 static volatile TickType_t valve_start_time = 0;
 static int32_t current_valve = 0;
 
 // Массив для времени работы клапанов (обновляется в ISR)
-static volatile TickType_t valve_work_times[5] = {0, 0, 0, 0, 0};
+static volatile TickType_t valve_work_times[NUM_VALVES] = {0, 0, 0, 0};
 
 static TickType_t pump_start_time = 0; // Время старта помпы для защиты
 static int32_t pump_start_counter = 0; // Значение счётчика при старте помпы
@@ -53,7 +52,7 @@ static int32_t last_banks_count = 0;
 
 // Массив целей для каждого клапана (пока все одинаковые)
 // 1075 - 250 ml
-static int32_t valve_targets[5] = {1075, 1075, 1075, 1075, 1075};
+static int32_t valve_targets[NUM_VALVES] = {1075, 1075, 1075, 1075};
 
 // Переменные для корректировки цели на основе скорости
 static int32_t last_correction_rot = 0;
@@ -72,7 +71,7 @@ static const float SLOW_ML = 272.0f;      // Объём при медленно�
 #define NORMAL_SPEED_ML_PER_SECOND (TARGET_ML / NORMAL_TIME) // 250/7 ≈ 35.7 мл/с
 
 // Глобальные переменные для накопления перелитых тиков
-static int32_t accumulated_overpoured_ticks[5] = {0, 0, 0, 0, 0};
+static int32_t accumulated_overpoured_ticks[NUM_VALVES] = {0, 0, 0, 0};
 
 // Массив предварительно рассчитанных тиков коррекции для скоростей от 30% до 100%
 static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 100%
@@ -142,7 +141,7 @@ static void IRAM_ATTR counter_isr_handler(void *arg) {
 
             // Следующий клапан по кругу
             current_valve++;
-            if (current_valve > 5) current_valve = 1;
+            if (current_valve > NUM_VALVES) current_valve = 1;
             app_state.valve = current_valve;
             app_state.banks_count++;
             
@@ -244,10 +243,10 @@ void counterTask(void *pvParam) {
         int open_v  = pending_open_valve;
         pending_close_valve = 0;
         valve_switch_pending = false;
-        if (close_v >= 1 && close_v <= 5) {
+        if (close_v >= 1 && close_v <= NUM_VALVES) {
           ioexp_set_valve(close_v, false);
         }
-        if (open_v >= 1 && open_v <= 5) {
+        if (open_v >= 1 && open_v <= NUM_VALVES) {
           ioexp_set_valve(open_v, true);
         }
       }
@@ -277,7 +276,7 @@ void counterTask(void *pvParam) {
         
         // Делаем 2 круга: каждый клапан на 1 секунду
         for (int round = 0; round < 2; round++) {
-          for (int valve = 1; valve <= 5; valve++) {
+          for (int valve = 1; valve <= NUM_VALVES; valve++) {
             // Проверяем STOP каждые 100мс
             uint32_t stop_check = 0;
             if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -293,7 +292,6 @@ void counterTask(void *pvParam) {
               case 2: ioexp_set_valve(2, true); break;
               case 3: ioexp_set_valve(3, true); break;
               case 4: ioexp_set_valve(4, true); break;
-              case 5: ioexp_set_valve(5, true); break;
             }
             
             app_state.valve = valve;
@@ -316,7 +314,6 @@ void counterTask(void *pvParam) {
               case 2: ioexp_set_valve(2, false); break;
               case 3: ioexp_set_valve(3, false); break;
               case 4: ioexp_set_valve(4, false); break;
-              case 5: ioexp_set_valve(5, false); break;
             }
             
             app_state.valve = 0; // Клапан закрыт
@@ -389,7 +386,7 @@ void counterTask(void *pvParam) {
         ioexp_set_pump(isOn);
         app_state.water_delta = 0;
         // Сброс времени клапанов и счётчика банок
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < NUM_VALVES; i++) {
           app_state.valve_times[i] = 0;
           valve_work_times[i] = 0; // Сбрасываем время работы клапанов
         }
@@ -414,7 +411,6 @@ void counterTask(void *pvParam) {
         ioexp_set_valve(2, false);
         ioexp_set_valve(3, false);
         ioexp_set_valve(4, false);
-        ioexp_set_valve(5, false);
         
         // Сброс last_banks_count для корректного отслеживания новых банок
         last_banks_count = 0;
@@ -458,7 +454,7 @@ void counterTask(void *pvParam) {
         app_state.water_target = app_config.steps + app_state.encoder;
         
         // Обновляем массив целей для всех клапанов
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < NUM_VALVES; i++) {
           valve_targets[i] = app_config.steps + app_state.encoder;
         }
         

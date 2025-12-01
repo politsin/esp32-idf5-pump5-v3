@@ -18,7 +18,6 @@ static constexpr int VALVE1_BIT = 10; // P10
 static constexpr int VALVE2_BIT = 11; // P11
 static constexpr int VALVE3_BIT = 12; // P12
 static constexpr int VALVE4_BIT = 13; // P13
-static constexpr int VALVE5_BIT = 14; // P14 (резерв на будущее)
 // Кнопки: P1..P3 (активный низ)
 static constexpr int BTN_STOP_BIT  = 1;  // P1
 static constexpr int BTN_FLUSH_BIT = 2;  // P2
@@ -98,7 +97,6 @@ esp_err_t ioexp_set_valve(int valve_index_1_based, bool level)
         case 2: bit = VALVE2_BIT; break;
         case 3: bit = VALVE3_BIT; break;
         case 4: bit = VALVE4_BIT; break;
-        case 5: bit = VALVE5_BIT; break;
         default: return ESP_ERR_INVALID_ARG;
     }
     // Активный низ: true -> 0, false -> 1
@@ -114,8 +112,7 @@ esp_err_t ioexp_set_all_valves(bool level)
         (1u << VALVE1_BIT) |
         (1u << VALVE2_BIT) |
         (1u << VALVE3_BIT) |
-        (1u << VALVE4_BIT) |
-        (1u << VALVE5_BIT);
+        (1u << VALVE4_BIT);
     // Активный низ
     if (level) // включить все
         port_shadow &= (uint16_t)~mask; // 0 = ON

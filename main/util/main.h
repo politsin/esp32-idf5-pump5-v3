@@ -26,7 +26,11 @@ typedef struct {
   int32_t water_delta;
   int32_t freeHeap;
   int8_t valve;
-  int32_t valve_times[5]; // Время налива для каждого клапана P1-P5 (в секундах)
+  // Количество клапанов в системе
+#ifndef NUM_VALVES
+#define NUM_VALVES 4
+#endif
+  int32_t valve_times[NUM_VALVES]; // Время налива для каждого клапана P1..PN (в секундах)
   int32_t banks_count; // Счётчик налитых банок
   int32_t total_banks_count; // Общий счётчик банок с момента старта устройства
   int32_t today_banks_count; // Счётчик банок налитых сегодня

@@ -22,7 +22,7 @@ extern "C" {
 // Инициализация PCF8575 и внутреннего состояния портов
 esp_err_t ioexp_init(void);
 
-// Установить уровень клапана (1..5), level: true=включить (1), false=выключить (0)
+// Установить уровень клапана (1..4), level: true=включить (1), false=выключить (0)
 esp_err_t ioexp_set_valve(int valve_index_1_based, bool level);
 
 // Установить уровень всех клапанов разом
