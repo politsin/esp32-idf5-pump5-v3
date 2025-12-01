@@ -22,6 +22,8 @@ TaskHandle_t telegramTaskHandle = NULL;
 // Структура для сообщения в очереди
 typedef struct {
     char message[512];
+    char chat_id[32];    // optional: пусто -> использовать дефолт
+    char thread_id[16];  // optional: пусто -> использовать дефолт
 } telegram_message_t;
 
 // HTTP обработчик для отправки сообщений
@@ -66,21 +68,21 @@ static bool is_wifi_connected(void)
 }
 
 // Отправка сообщения в Telegram
-static esp_err_t telegram_send_message_internal(const char* message)
+static esp_err_t telegram_send_message_internal(const telegram_message_t* m)
 {
-    if (!message) {
+    if (!m || !m->message[0]) {
         ESP_LOGE(TAG, "Message is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
     // Создаем сообщение с иконкой устройства
     char full_message[512];
-    snprintf(full_message, sizeof(full_message), "%s %s", TELEGRAM_DEVICE_ICON, message);
+    snprintf(full_message, sizeof(full_message), "%s %s", TELEGRAM_DEVICE_ICON, m->message);
 
     // Создаем JSON для отправки
     cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "chat_id", TELEGRAM_CHAT_ID);
-    cJSON_AddStringToObject(json, "message_thread_id", TELEGRAM_MESSAGE_THREAD_ID);
+    cJSON_AddStringToObject(json, "chat_id", (m->chat_id[0] ? m->chat_id : TELEGRAM_CHAT_ID));
+    cJSON_AddStringToObject(json, "message_thread_id", (m->thread_id[0] ? m->thread_id : TELEGRAM_MESSAGE_THREAD_ID));
     cJSON_AddStringToObject(json, "text", full_message);
     
     char *json_string = cJSON_Print(json);
@@ -180,8 +182,8 @@ void telegramTask(void *pvParameter)
                 continue;
             }
             
-            // Отправляем сообщение синхронно в отдельной задаче
-            esp_err_t result = telegram_send_message_internal(msg.message);
+            // Отправляем сообщение синхронно
+            esp_err_t result = telegram_send_message_internal(&msg);
             if (result == ESP_OK) {
                 ESP_LOGI(TAG, "Message sent successfully: %s", msg.message);
             } else {
@@ -221,7 +223,7 @@ esp_err_t telegram_send_message_async(const char* message)
         return ESP_FAIL;
     }
 
-    telegram_message_t msg;
+    telegram_message_t msg = {};
     strncpy(msg.message, message, sizeof(msg.message) - 1);
     msg.message[sizeof(msg.message) - 1] = '\0'; // Гарантируем завершающий ноль
 
@@ -238,6 +240,43 @@ esp_err_t telegram_send_message_async(const char* message)
     }
 
     ESP_LOGI(TAG, "Message queued for sending: %s", message);
+    return ESP_OK;
+}
+
+// Неблокирующая отправка сообщения в конкретный чат/тред
+esp_err_t telegram_send_message_async_to(const char* message, const char* chat_id, const char* thread_id)
+{
+    if (!message || !telegram_queue) {
+        ESP_LOGE(TAG, "Message is NULL or queue not initialized");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!is_wifi_connected()) {
+        ESP_LOGW(TAG, "WiFi not connected, message not sent: %s", message);
+        return ESP_FAIL;
+    }
+    telegram_message_t msg = {};
+    strncpy(msg.message, message, sizeof(msg.message) - 1);
+    msg.message[sizeof(msg.message) - 1] = '\0';
+    if (chat_id && chat_id[0]) {
+        strncpy(msg.chat_id, chat_id, sizeof(msg.chat_id) - 1);
+        msg.chat_id[sizeof(msg.chat_id) - 1] = '\0';
+    }
+    if (thread_id && thread_id[0]) {
+        strncpy(msg.thread_id, thread_id, sizeof(msg.thread_id) - 1);
+        msg.thread_id[sizeof(msg.thread_id) - 1] = '\0';
+    }
+    if (uxQueueMessagesWaiting(telegram_queue) >= 10) {
+        ESP_LOGW(TAG, "Telegram queue is full, message dropped: %s", message);
+        return ESP_FAIL;
+    }
+    if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to send message to queue");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Message queued for sending to %s/%s: %s",
+             (msg.chat_id[0] ? msg.chat_id : TELEGRAM_CHAT_ID),
+             (msg.thread_id[0] ? msg.thread_id : TELEGRAM_MESSAGE_THREAD_ID),
+             message);
     return ESP_OK;
 }
 

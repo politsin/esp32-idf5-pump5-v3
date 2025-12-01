@@ -15,6 +15,8 @@ esp_err_t telegram_test_bot(void);
 
 // Отправка сообщения в Telegram
 esp_err_t telegram_send_message(const char* message);
+// Отправка сообщения в конкретный чат/тред
+esp_err_t telegram_send_message_to(const char* message, const char* chat_id, const char* thread_id);
 
 // Отправка уведомления о подключении к WiFi
 esp_err_t telegram_send_wifi_connected(void);
