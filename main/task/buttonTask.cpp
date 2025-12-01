@@ -94,12 +94,10 @@ static void on_button(button_t *btn, button_state_t state) {
     }
   }
   if (state == BUTTON_PRESSED) {
-    if (btn == &btn1) { btn1_down = true; btn1_repeat = false; }
-    if (btn == &btn2) { btn2_down = true; btn2_repeat = false; }
+    // Ничего: репит определяется по физическому уровню GPIO
   }
   if (state == BUTTON_RELEASED) {
-    if (btn == &btn1) { btn1_down = false; btn1_repeat = false; }
-    if (btn == &btn2) { btn2_down = false; btn2_repeat = false; }
+    // Ничего: репит определяется по физическому уровню GPIO
   }
   // Notify screenTask
   if (notify_value && false) {
@@ -148,6 +146,9 @@ void buttonTask(void *pvParam) {
   // Разрешим обработку кнопок через короткую паузу после старта,
   // чтобы входы успели стабилизироваться
   TickType_t enable_at = xTaskGetTickCount() + pdMS_TO_TICKS(1500);
+  TickType_t last_repeat1 = 0;
+  TickType_t last_repeat2 = 0;
+  const TickType_t repeat_period = pdMS_TO_TICKS(150); // ручной репит при удержании
   while (true) {
     if (!buttons_enabled && xTaskGetTickCount() >= enable_at) {
       buttons_enabled = true;
@@ -168,6 +169,25 @@ void buttonTask(void *pvParam) {
       last_run = run_p;
     }
 
-    // Авто-щёлканье теперь обрабатывается библиотекой (autorepeat + BUTTON_PRESSED_LONG)
+    // Ручной авто-репит: опираемся на фактический уровень GPIO, а не на события
+    if (buttons_enabled) {
+      TickType_t now = xTaskGetTickCount();
+      bool phys1_pressed = (gpio_get_level(BUTTON_PIN1) == (btn1.pressed_level ? 1 : 0));
+      bool phys2_pressed = (gpio_get_level(BUTTON_PIN2) == (btn2.pressed_level ? 1 : 0));
+      if (phys1_pressed && (now - last_repeat1 >= repeat_period)) {
+        last_repeat1 = now;
+        app_state.encoder -= ENC_STEP_LONG;
+        xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+        xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      }
+      if (phys2_pressed && (now - last_repeat2 >= repeat_period)) {
+        last_repeat2 = now;
+        app_state.encoder += ENC_STEP_LONG;
+        xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
+        xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
+      }
+      if (!phys1_pressed) last_repeat1 = now;
+      if (!phys2_pressed) last_repeat2 = now;
+    }
   }
 }
