@@ -55,9 +55,8 @@ static void on_button(button_t *btn, button_state_t state) {
   }
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
-    // Входим в режим "репита": дальше повторные CLICK от библиотеки трактуем как шаги по 10
-    if (btn == &btn1) btn1_repeat = true;
-    if (btn == &btn2) btn2_repeat = true;
+    // Лонгклик отключён
+    return;
   }
   if (state == BUTTON_CLICKED) {
     if (btn == &btn_stop) {
@@ -82,16 +81,16 @@ static void on_button(button_t *btn, button_state_t state) {
     // Обычный клик — ±1; клики в режиме репита — ±10
     // btn1 (GPIO0) — уменьшить, btn2 (GPIO35) — увеличить
     if (btn == &btn1) {
-      app_state.encoder -= (btn1_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK);
+      app_state.encoder -= ENC_STEP_CLICK;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", (btn1_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK), app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift -= %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
     }
     if (btn == &btn2) {
-      app_state.encoder += (btn2_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK);
+      app_state.encoder += ENC_STEP_CLICK;
       xTaskNotify(screen, ENCODER_CHANGED_BIT, eSetBits);
       xTaskNotify(counter, ENCODER_CHANGED_BIT, eSetBits);
-      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", (btn2_repeat ? ENC_STEP_LONG : ENC_STEP_CLICK), app_state.encoder);
+      ESP_LOGI(BUTTON_TAG, "Encoder shift += %d -> %ld", ENC_STEP_CLICK, app_state.encoder);
     }
   }
   if (state == BUTTON_PRESSED) {
@@ -117,7 +116,7 @@ void buttonTask(void *pvParam) {
   btn1.gpio = BUTTON_PIN1;
   btn1.pressed_level = 0;
   btn1.internal_pull = true;
-  btn1.autorepeat = true;
+  btn1.autorepeat = false;
   btn1.callback = on_button;
 
   // Second button connected between GPIO and +3.3V
@@ -125,7 +124,7 @@ void buttonTask(void *pvParam) {
   btn2.gpio = BUTTON_PIN2;
   btn2.pressed_level = 1;
   btn2.internal_pull = false; // GPIO35: нет внутренних подтяжек
-  btn2.autorepeat = true;
+  btn2.autorepeat = false;
   btn2.callback = on_button;
 
   // STOP/FLUSH/RUN теперь читаем через PCF8575 (виртуальные кнопки)
