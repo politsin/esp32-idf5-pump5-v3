@@ -140,6 +140,8 @@ void counterTask(void *pvParam) {
   pcnt_unit_config_t unit_cfg = {
       .low_limit = 0,
       .high_limit = 32767,
+      .intr_priority = 0,
+      .flags = {}
   };
   pcnt_new_unit(&unit_cfg, &pcnt_unit);
   // Глитч-фильтр: игнор импульсов короче ~12 мкс
@@ -151,6 +153,7 @@ void counterTask(void *pvParam) {
   pcnt_chan_config_t chan_cfg = {
       .edge_gpio_num = DI,
       .level_gpio_num = -1,
+      .flags = {}
   };
   pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan);
   pcnt_channel_set_edge_action(
