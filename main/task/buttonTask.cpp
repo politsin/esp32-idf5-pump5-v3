@@ -41,6 +41,7 @@ static const int ENC_STEP_CLICK = 1;  // шаг по клику
 static const int ENC_STEP_LONG  = 10; // шаг по долгому удержанию
 static volatile bool btn1_down = false, btn2_down = false;
 static volatile bool btn1_repeat = false, btn2_repeat = false;
+static volatile bool buttons_enabled = false; // защита от «корёжит» сразу после старта
 
 static void IRAM_ATTR pcf_int_isr(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -48,6 +49,10 @@ static void IRAM_ATTR pcf_int_isr(void* arg) {
   if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
 }
 static void on_button(button_t *btn, button_state_t state) {
+  // Игнорируем события до разрешения кнопок (стартовая стабилизация)
+  if (!buttons_enabled && (btn == &btn1 || btn == &btn2)) {
+    return;
+  }
   uint32_t notify_value = 0; // Значение для уведомления
   if (state == BUTTON_PRESSED_LONG) {
     // Входим в режим "репита": дальше повторные CLICK от библиотеки трактуем как шаги по 10
@@ -141,7 +146,13 @@ void buttonTask(void *pvParam) {
   gpio_isr_handler_add(PCF8575_INT_GPIO, pcf_int_isr, NULL);
 
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
+  // Разрешим обработку кнопок через короткую паузу после старта,
+  // чтобы входы успели стабилизироваться
+  TickType_t enable_at = xTaskGetTickCount() + pdMS_TO_TICKS(1500);
   while (true) {
+    if (!buttons_enabled && xTaskGetTickCount() >= enable_at) {
+      buttons_enabled = true;
+    }
     // Ждём событие от INT или таймаут (для страховки/дребезга)
     if (pcf_int_sem) (void)xSemaphoreTake(pcf_int_sem, xBlockTime);
     // Небольшая задержка для подавления дребезга
