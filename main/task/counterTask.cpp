@@ -81,6 +81,7 @@ static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 1
 static volatile int pending_close_valve = 0;
 static volatile int pending_open_valve = 0;
 static volatile bool valve_switch_pending = false;
+static volatile TickType_t last_di_isr_tick = 0; // для программного антидребезга в GPIO ISR (фоллбэк)
 #ifndef VALVE_SWITCH_BIT
 #define VALVE_SWITCH_BIT (1UL << 29)
 #endif
@@ -186,6 +187,15 @@ void counterTask(void *pvParam) {
     pcnt_unit_start(pcnt_unit);
   } else {
     ESP_LOGE(COUNTER_TAG, "PCNT init failed; counter will not be used");
+    // Фоллбэк: используем GPIO прерывание по фронту вверх с программным антидребезгом
+    gpio_set_intr_type(DI, GPIO_INTR_POSEDGE);
+    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
+      TickType_t now = xTaskGetTickCountFromISR();
+      if (now - last_di_isr_tick < pdMS_TO_TICKS(2)) return; // ~2 мс антидребезг
+      last_di_isr_tick = now;
+      rot++;
+    };
+    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
   }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
@@ -259,6 +269,38 @@ void counterTask(void *pvParam) {
           if (rot == 0) {
             valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
           }
+        }
+      }
+    } else if (!pcnt_ready && rot > 0) {
+      // Фоллбэк путь: рост rot происходит в GPIO ISR
+      app_state.water_current = rot;
+      if (pumpOn && !flush_mode) {
+        int32_t target = valve_targets[current_valve - 1];
+        if (rot >= target) {
+          TickType_t current_time = xTaskGetTickCount();
+          TickType_t valve_time = current_time - valve_start_time;
+          app_state.valve_times[current_valve - 1] = valve_time;
+          valve_work_times[current_valve - 1] = valve_time;
+          valve_start_time = current_time;
+          pending_close_valve = current_valve;
+          current_valve++;
+          if (current_valve > NUM_VALVES) current_valve = 1;
+          app_state.valve = current_valve;
+          app_state.banks_count++;
+          pending_open_valve = current_valve;
+          valve_switch_pending = true;
+          xTaskNotify(counter, VALVE_SWITCH_BIT, eSetBits);
+          if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
+            xTaskNotify(counter, PROGRESS_REPORT_BIT, eSetBits);
+          }
+          rot = 0;
+          pump_start_counter = 0;
+          pump_start_time = xTaskGetTickCount();
+          last_correction_rot = 0;
+          last_correction_time = xTaskGetTickCount();
+          valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+          accumulated_overpoured_ticks[current_valve - 1] = 0;
+          xTaskNotify(screen, UPDATE_BIT, eSetBits);
         }
       }
     }
