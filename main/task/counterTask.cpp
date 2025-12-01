@@ -81,7 +81,6 @@ static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 1
 static volatile int pending_close_valve = 0;
 static volatile int pending_open_valve = 0;
 static volatile bool valve_switch_pending = false;
-static volatile TickType_t last_di_isr_tick = 0; // для программного антидребезга в GPIO ISR (фоллбэк)
 static volatile int32_t last_logged_rot = -1;     // для "в лоб" логирования тиков
 static int last_di_level = -1;                    // для логирования изменения уровня на DI
 static volatile int32_t gpio_ticks_pending = 0;   // тики, накопленные GPIO ISR
@@ -153,16 +152,7 @@ void counterTask(void *pvParam) {
   if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
     pcnt_ready = false;
   }
-  // Глитч-фильтр: игнор импульсов короче ~5 мс
-  pcnt_glitch_filter_config_t filter_cfg = {
-      .max_glitch_ns = 5000000, // ~5 мс для подавления дребезга
-  };
-  if (pcnt_ready) {
-    esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
-    if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
-      pcnt_ready = false;
-    }
-  }
+  // Антидребезг (glitch filter) отключён по требованию: оставляем только подтяжку
   // Канал: считаем по спадающему фронту (датчик тянет к GND)
   pcnt_chan_config_t chan_cfg = {
       .edge_gpio_num = DI,
@@ -196,9 +186,6 @@ void counterTask(void *pvParam) {
     }
     gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
     auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
-      TickType_t now = xTaskGetTickCountFromISR();
-      if (now - last_di_isr_tick < pdMS_TO_TICKS(5)) return; // ~5 мс антидребезг
-      last_di_isr_tick = now;
       gpio_ticks_pending++;
     };
     gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
