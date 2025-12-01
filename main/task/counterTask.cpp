@@ -149,7 +149,7 @@ void counterTask(void *pvParam) {
   }
   // Глитч-фильтр: игнор импульсов короче ~12 мкс
   pcnt_glitch_filter_config_t filter_cfg = {
-      .max_glitch_ns = 12000,
+      .max_glitch_ns = 50000, // ~50 мкс для подавления дребезга
   };
   if (pcnt_ready) {
     esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
@@ -168,8 +168,8 @@ void counterTask(void *pvParam) {
   }
   if (pcnt_ready && pcnt_channel_set_edge_action(
         pcnt_chan,
-        PCNT_CHANNEL_EDGE_ACTION_HOLD,
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) {
+        PCNT_CHANNEL_EDGE_ACTION_INCREASE,  // считаем по фронту вверх
+        PCNT_CHANNEL_EDGE_ACTION_HOLD) != ESP_OK) { // спад игнорируем
     pcnt_ready = false;
   }
   if (pcnt_ready && pcnt_channel_set_level_action(
