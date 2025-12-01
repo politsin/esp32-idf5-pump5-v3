@@ -44,9 +44,6 @@ extern "C" {
 // contains callback functions
 lv_disp_drv_t disp_drv;
 }
-// Буфер для преобразования RGB<->BGR при необходимости
-static uint16_t *color_swap_buf = NULL;
-static size_t color_swap_capacity = 0;
 
 #define LVGL_TICK_PERIOD_MS 2
 #define LVGL_TASK_MAX_DELAY_MS 200
@@ -70,10 +67,6 @@ void screenTask(void *pvParam) {
       AMOLED_HEIGHT * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
   assert(buf2);
   lv_disp_draw_buf_init(&disp_buf, buf1, buf2, AMOLED_HEIGHT * 20);
-  // Выделяем вспомогательный буфер для возможной перестановки каналов (R<->B)
-  color_swap_capacity = AMOLED_HEIGHT * 20;
-  color_swap_buf = (uint16_t *)heap_caps_malloc(color_swap_capacity * sizeof(uint16_t), MALLOC_CAP_DMA);
-  assert(color_swap_buf);
 
   ESP_LOGI(SCREEN_TAG, "Register display driver to LVGL");
   lv_disp_drv_init(&disp_drv);
@@ -423,27 +416,8 @@ static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
   int offsetx2 = area->x2;
   int offsety1 = area->y1;
   int offsety2 = area->y2;
-  // На дисплее наблюдается перестановка каналов R и B (жёлтый -> голубой, красный -> синий)
-  // Конвертируем RGB565 (R5 G6 B5) в BGR565 перед отправкой в драйвер
-  size_t w = (size_t)(offsetx2 - offsetx1 + 1);
-  size_t h = (size_t)(offsety2 - offsety1 + 1);
-  size_t count = w * h;
-  if (count > color_swap_capacity) {
-    // страховка: перераспределяем (маловероятно, буфер соответствует draw_buf)
-    if (color_swap_buf) free(color_swap_buf);
-    color_swap_buf = (uint16_t *)heap_caps_malloc(count * sizeof(uint16_t), MALLOC_CAP_DMA);
-    color_swap_capacity = count;
-  }
-  uint16_t *src = (uint16_t *)color_map;
-  for (size_t i = 0; i < count; i++) {
-    uint16_t p = src[i];
-    uint16_t r = p & 0xF800;      // Rrrrr00000000000
-    uint16_t g = p & 0x07E0;      // 00000Gggggg00000
-    uint16_t b = p & 0x001F;      // 00000000000Bbbbb
-    uint16_t swapped = (uint16_t)((b << 11) | g | (r >> 11));
-    color_swap_buf[i] = swapped;
-  }
-  display_push_colors(offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_swap_buf);
+  display_push_colors(offsetx1, offsety1, offsetx2 + 1, offsety2 + 1,
+                      (uint16_t *)color_map);
 }
 
 static void app_increase_lvgl_tick(void *arg) {
