@@ -137,38 +137,54 @@ void counterTask(void *pvParam) {
   // Создаём юнит PCNT
   static pcnt_unit_handle_t pcnt_unit = NULL;
   static pcnt_channel_handle_t pcnt_chan = NULL;
+  bool pcnt_ready = true;
   pcnt_unit_config_t unit_cfg = {
       .low_limit = 0,
       .high_limit = 32767,
       .intr_priority = 0,
       .flags = {}
   };
-  pcnt_new_unit(&unit_cfg, &pcnt_unit);
+  if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
+    pcnt_ready = false;
+  }
   // Глитч-фильтр: игнор импульсов короче ~12 мкс
   pcnt_glitch_filter_config_t filter_cfg = {
       .max_glitch_ns = 12000,
   };
-  pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+  if (pcnt_ready) {
+    esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+    if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
+      pcnt_ready = false;
+    }
+  }
   // Канал: считаем по спадающему фронту (датчик тянет к GND)
   pcnt_chan_config_t chan_cfg = {
       .edge_gpio_num = DI,
       .level_gpio_num = -1,
       .flags = {}
   };
-  pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan);
-  pcnt_channel_set_edge_action(
-      pcnt_chan,
-      PCNT_CHANNEL_EDGE_ACTION_HOLD,     // по фронту вверх не считаем
-      PCNT_CHANNEL_EDGE_ACTION_INCREASE  // по фронту вниз +1
-  );
-  pcnt_channel_set_level_action(
-      pcnt_chan,
-      PCNT_CHANNEL_LEVEL_ACTION_KEEP,    // уровень не влияет
-      PCNT_CHANNEL_LEVEL_ACTION_KEEP
-  );
-  pcnt_unit_enable(pcnt_unit);
-  pcnt_unit_clear_count(pcnt_unit);
-  pcnt_unit_start(pcnt_unit);
+  if (pcnt_ready && pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan) != ESP_OK) {
+    pcnt_ready = false;
+  }
+  if (pcnt_ready && pcnt_channel_set_edge_action(
+        pcnt_chan,
+        PCNT_CHANNEL_EDGE_ACTION_HOLD,
+        PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) {
+    pcnt_ready = false;
+  }
+  if (pcnt_ready && pcnt_channel_set_level_action(
+        pcnt_chan,
+        PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+        PCNT_CHANNEL_LEVEL_ACTION_KEEP) != ESP_OK) {
+    pcnt_ready = false;
+  }
+  if (pcnt_ready) {
+    pcnt_unit_enable(pcnt_unit);
+    pcnt_unit_clear_count(pcnt_unit);
+    pcnt_unit_start(pcnt_unit);
+  } else {
+    ESP_LOGE(COUNTER_TAG, "PCNT init failed; counter will not be used");
+  }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
   // config->get_item("steps", app_config.steps);
@@ -183,7 +199,7 @@ void counterTask(void *pvParam) {
   app_state.water_target = app_config.steps + app_state.encoder;
   
   // Инициализируем массив целей для каждого клапана
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < NUM_VALVES; i++) {
     valve_targets[i] = app_config.steps + app_state.encoder;
   }
   
@@ -205,7 +221,7 @@ void counterTask(void *pvParam) {
   while (true) {
     // Считываем импульсы с PCNT и обновляем счётчик воды
     int pcnt_val = 0;
-    if (pcnt_unit_get_count(pcnt_unit, &pcnt_val) == ESP_OK && pcnt_val != 0) {
+    if (pcnt_ready && pcnt_unit_get_count(pcnt_unit, &pcnt_val) == ESP_OK && pcnt_val != 0) {
       pcnt_unit_clear_count(pcnt_unit);
       rot += (int32_t)pcnt_val;
       app_state.water_current = rot;
