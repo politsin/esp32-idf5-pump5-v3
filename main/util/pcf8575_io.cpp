@@ -51,6 +51,11 @@ esp_err_t ioexp_init(void)
     const gpio_num_t sda = I2C_SDA;
     const gpio_num_t scl = I2C_SCL;
 
+    // Важно: в app_main() для тега "IOEXP" выставлен уровень WARN, поэтому
+    // печатаем порт/пины/адрес через ESP_LOGW, чтобы это было видно в мониторе.
+    ESP_LOGW(TAG_IOEXP, "PCF8575 init: addr=0x%02X port=%d SDA=%d SCL=%d",
+             (int)PCF8575_ADDR, (int)I2C_NUM_0, (int)sda, (int)scl);
+
     ESP_ERROR_CHECK(pcf8575_init_desc(&pcf_dev, PCF8575_ADDR, I2C_NUM_0, sda, scl));
 
     // Начальное состояние (активный низ для выходов):

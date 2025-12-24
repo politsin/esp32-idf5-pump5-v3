@@ -18,7 +18,10 @@ esp_err_t i2c_init(bool scan) {
     if (scan) ESP_ERROR_CHECK(iot_i2c_scan(1));
     return ESP_OK;
   }
-  ESP_LOGI(I2C, "I2C init. SDA=%d SCL=%d", I2C_SDA, I2C_SCL);
+  // Важно: в app_main() для тега "I2C" выставлен уровень WARN, поэтому
+  // ключевую инфу о шине печатаем через ESP_LOGW, чтобы она была видна всегда.
+  ESP_LOGW(I2C, "I2C init: port=%d SDA=%d SCL=%d freq=%uHz scan=%d",
+           (int)I2C_NUM_0, (int)I2C_SDA, (int)I2C_SCL, 400000u, (int)scan);
   i2c_config_t conf = {};
   conf.mode = I2C_MODE_MASTER;
   conf.sda_io_num = I2C_SDA;
@@ -29,7 +32,7 @@ esp_err_t i2c_init(bool scan) {
   conf.master.clk_speed = 400000; // 400 кГц, совпадает с esp-idf-lib (pcf8575)
   i2c_param_config(I2C_NUM_0, &conf);
   ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
-  ESP_LOGI(I2C, "I2C init OK");
+  ESP_LOGW(I2C, "I2C init OK (port=%d)", (int)I2C_NUM_0);
   s_inited = true;
   if (scan) {
     // Try To SCAN
@@ -37,7 +40,7 @@ esp_err_t i2c_init(bool scan) {
     // Освободим драйвер после скана, чтобы i2cdev мог установить свой без конфликтов
     i2c_driver_delete(I2C_NUM_0);
     s_inited = false;
-    ESP_LOGI(I2C, "I2C driver released after scan (handover to i2cdev)");
+    ESP_LOGW(I2C, "I2C driver released after scan (handover to i2cdev), port=%d", (int)I2C_NUM_0);
   }
 #else
   ESP_LOGW(IOT, "I2C OFF");
@@ -47,6 +50,7 @@ esp_err_t i2c_init(bool scan) {
 
 esp_err_t iot_i2c_scan(uint8_t i2c_scan_count = 1) {
 #ifdef CONFIG_IOT_I2C_SCAN
+  printf("I2C scan on port %d (SDA=%d SCL=%d)\n", (int)I2C_NUM_0, (int)I2C_SDA, (int)I2C_SCL);
   for (uint8_t j = 0; j < i2c_scan_count; j++) {
     esp_err_t res;
     printf("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\n");

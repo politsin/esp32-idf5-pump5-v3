@@ -1,16 +1,21 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "W:\\soft\\esp\\idf\\v5.5\\esp-idf",
-  "idf.pythonInstallPath": "W:\\soft\\esp\\tools\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
     "target/esp32.cfg"
   ],
-  "idf.toolsPathWin": "W:\\soft\\esp\\tools",
+  "idf.portWin": "COM5",
+  "idf.currentSetup": "W:\\soft\\esp\\idf\\v5.5.1\\esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
-  "idf.portWin": "COM5",
+  "idf.pythonBinPathWin": "C:\\Espressif\\tools\\python\\v5.5.1\\venv\\Scripts\\python.exe",
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=C:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
+    "--compile-commands-dir=w:\\proj\\esp32-idf5-pump5-v3\\build"
+  ],
   "idf.flashType": "UART",
   "pump.ota.ip": "192.168.3.11",
   "pump.ota.bin": "build/esp32-idf5-pump5-v3.bin"
