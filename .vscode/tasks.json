@@ -9,17 +9,13 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py build",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
-            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
-            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
-          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
-          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
         }
       },
       "problemMatcher": [
@@ -66,17 +62,13 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py fullclean",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
-            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
-            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
-          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
-          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
         }
       },
       "problemMatcher": [
@@ -102,17 +94,13 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py flash -p ${config:idf.portWin} -b ${config:idf.flashBaudRate}",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
-            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
-            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
-          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
-          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
         }
       },
       "problemMatcher": [
@@ -138,17 +126,13 @@
         "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py -p ${config:idf.portWin} monitor",
         "options": {
           "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}",
-            "IDF_TOOLS_PATH": "${config:idf.toolsPathWin}",
-            "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
           }
         }
       },
       "options": {
         "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}",
-          "IDF_TOOLS_PATH": "${config:idf.toolsPath}",
-          "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
+          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
         }
       },
       "problemMatcher": [
@@ -251,25 +235,39 @@
           }
         }
       }
-    }
-    ,
+    },
     {
-      "label": "ESP-IDF Size",
+      "label": "OTA: Upload (web)",
       "type": "shell",
-      "command": "${config:idf.pythonBinPath} ${config:idf.espIdfPath}/tools/idf.py size",
+      "command": "curl -f -X POST -H \"Content-Type: application/octet-stream\" --data-binary @${config:pump.ota.bin} http://${config:pump.ota.ip}/api/ota",
       "windows": {
-        "command": "${config:idf.pythonBinPathWin} ${config:idf.espIdfPathWin}\\tools\\idf.py size",
-        "options": {
-          "env": {
-            "PATH": "${env:PATH};${config:idf.customExtraPaths}"
-          }
-        }
+        "command": "pwsh",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}/tools/ota_upload.ps1",
+          "-Ip",
+          "${config:pump.ota.ip}",
+          "-Bin",
+          "${config:pump.ota.bin}",
+          "-TimeoutSec",
+          "180"
+        ]
       },
-      "options": {
-        "env": {
-          "PATH": "${env:PATH}:${config:idf.customExtraPaths}"
-        }
-      }
+      "problemMatcher": []
+    },
+    {
+      "label": "OTA: Build + Upload (web)",
+      "dependsOn": [
+        "Build - Build project",
+        "OTA: Upload (web)"
+      ],
+      "dependsOrder": "sequence",
+      "type": "shell",
+      "command": "echo OTA build+upload done",
+      "problemMatcher": []
     }
   ]
 }

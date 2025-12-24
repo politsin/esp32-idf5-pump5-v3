@@ -1,20 +1,17 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.customExtraVars": {
-    "OPENOCD_SCRIPTS": "W:\\soft\\esp\\tools\\tools\\openocd-esp32\\v0.12.0-esp32-20241016/openocd-esp32/share/openocd/scripts",
-    "IDF_CCACHE_ENABLE": "1",
-    "ESP_ROM_ELF_DIR": "W:\\soft\\esp\\tools\\tools\\esp-rom-elfs\\20240305/",
-    "IDF_TOOLS_PATH": "W:\\soft\\esp\\tools",
-    "IDF_PYTHON_ENV_PATH": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env"
-  },
   "idf.espIdfPathWin": "W:\\soft\\esp\\idf\\v5.5\\esp-idf",
+  "idf.pythonInstallPath": "W:\\soft\\esp\\tools\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
-    "board/esp32-wrover-kit-3.3v.cfg"
+    "interface/ftdi/esp32_devkitj_v1.cfg",
+    "target/esp32.cfg"
   ],
-  "idf.portWin": "COM5",
   "idf.toolsPathWin": "W:\\soft\\esp\\tools",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32"
+  },
+  "idf.portWin": "COM5",
   "idf.flashType": "UART",
-  "idf.pythonInstallPath": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe",
-  "idf.pythonBinPathWin": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe",
-  "idf.pythonBinPath": "W:\\soft\\esp\\tools\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe"
+  "pump.ota.ip": "192.168.3.11",
+  "pump.ota.bin": "build/esp32-idf5-pump5-v3.bin"
 }
