@@ -79,7 +79,6 @@ esp_err_t iot_i2c_scan(uint8_t i2c_scan_count = 1) {
 TaskHandle_t i2cScan;
 void i2cScanTask(void *pvParam) {
   i2c_init(true);
-  static const TickType_t xBlockTime = pdMS_TO_TICKS(50);
   while (true) {
     iot_i2c_scan();
   }

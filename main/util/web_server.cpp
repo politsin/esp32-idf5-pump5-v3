@@ -149,14 +149,26 @@ static esp_err_t send_file_from_spiffs(httpd_req_t *req, const char *rel_uri) {
   char path[256];
 
   if (!uri || uri[0] == '\0' || strcmp(uri, "/") == 0) {
-    snprintf(path, sizeof(path), "%s/index.html", spiffs_fs_base_path());
+    const int n = snprintf(path, sizeof(path), "%s/index.html", spiffs_fs_base_path());
+    if (n <= 0 || n >= (int)sizeof(path)) {
+      httpd_resp_set_status(req, "414 URI Too Long");
+      return httpd_resp_send(req, "path too long", HTTPD_RESP_USE_STRLEN);
+    }
   } else {
     // Защита от .. в uri
     if (strstr(uri, "..")) {
       httpd_resp_set_status(req, "400 Bad Request");
       return httpd_resp_send(req, "bad uri", HTTPD_RESP_USE_STRLEN);
     }
-    snprintf(path, sizeof(path), "%s%s", spiffs_fs_base_path(), uri);
+    // Избегаем format-truncation (-Werror) и явного переполнения буфера
+    const size_t base_len = strlen(spiffs_fs_base_path());
+    const size_t uri_len = strlen(uri);
+    if (base_len + uri_len >= sizeof(path)) {
+      httpd_resp_set_status(req, "414 URI Too Long");
+      return httpd_resp_send(req, "uri too long", HTTPD_RESP_USE_STRLEN);
+    }
+    memcpy(path, spiffs_fs_base_path(), base_len);
+    memcpy(path + base_len, uri, uri_len + 1); // включая '\0'
   }
 
   struct stat st;

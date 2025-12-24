@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <esp_chip_info.h>
-#include <esp_flash.h>
+#include "esp_flash.h"
 #include <esp_system.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,8 +23,7 @@ void chip_info(void) {
   printf("silicon revision %d, ", info.revision);
 
   uint32_t flash_size_bytes = 0;
-  // NULL => esp_flash_default_chip
-  (void)esp_flash_get_physical_size(nullptr, &flash_size_bytes);
+  (void)esp_flash_get_physical_size(esp_flash_default_chip, &flash_size_bytes);
   const uint32_t flash_mb = (uint32_t)(flash_size_bytes / (1024UL * 1024UL));
   printf("%" PRIu32 "MB %s flash\n", flash_mb,
          (info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");

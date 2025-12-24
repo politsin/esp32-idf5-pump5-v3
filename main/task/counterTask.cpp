@@ -87,7 +87,6 @@ static volatile int pending_close_valve = 0;
 static volatile int pending_open_valve = 0;
 static volatile bool valve_switch_pending = false;
 static volatile int32_t last_logged_rot = -1;     // для "в лоб" логирования тиков
-static int last_di_level = -1;                    // для логирования изменения уровня на DI
 static volatile int32_t gpio_ticks_pending = 0;   // тики, накопленные GPIO ISR
 #ifndef VALVE_SWITCH_BIT
 #define VALVE_SWITCH_BIT (1UL << 29)
@@ -200,7 +199,8 @@ void counterTask(void *pvParam) {
     }
     gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
     auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
-      gpio_ticks_pending++;
+      // volatile++ предупреждается как deprecated; используем явное сложение
+      gpio_ticks_pending = gpio_ticks_pending + 1;
     };
     gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
     gpio_intr_enable(DI);

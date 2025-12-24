@@ -1,4 +1,5 @@
 #include "wifi_manager.h"
+#include <string.h>
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_log.h"
@@ -117,13 +118,10 @@ esp_err_t wifi_init(void) {
       IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL,
       &instance_got_ip));
 
-  wifi_config_t wifi_config = {
-      .sta =
-          {
-              .ssid = WIFI_SSID,
-              .password = WIFI_PASSWORD,
-          },
-  };
+  wifi_config_t wifi_config = {};
+  // Важно: строки должны копироваться в фиксированные массивы wifi_config.sta.ssid/password
+  strlcpy((char *)wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
+  strlcpy((char *)wifi_config.sta.password, WIFI_PASSWORD, sizeof(wifi_config.sta.password));
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
@@ -155,16 +153,14 @@ esp_err_t wifi_init(void) {
 
 // Функция для OTA обновления
 esp_err_t ota_update(const char *url) {
-  esp_http_client_config_t http_config = {
-      .url = url,
-      .cert_pem = NULL,
-      .skip_cert_common_name_check = true,
-  };
+  esp_http_client_config_t http_config = {};
+  http_config.url = url;
+  http_config.cert_pem = NULL;
+  http_config.skip_cert_common_name_check = true;
 
-  esp_https_ota_config_t ota_config = {
-      .http_config = (const esp_http_client_config_t *)&http_config,
-      .buffer_caps = MALLOC_CAP_DMA | MALLOC_CAP_8BIT,
-  };
+  esp_https_ota_config_t ota_config = {};
+  ota_config.http_config = (const esp_http_client_config_t *)&http_config;
+  ota_config.buffer_caps = MALLOC_CAP_DMA | MALLOC_CAP_8BIT;
 
   esp_err_t ret = esp_https_ota(&ota_config);
   if (ret == ESP_OK) {

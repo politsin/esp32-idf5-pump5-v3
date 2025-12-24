@@ -20,8 +20,8 @@ typedef struct {
 } web_log_line_t;
 
 static web_log_line_t s_lines[WEB_LOG_LINES];
-static volatile uint32_t s_seq = 0;
-static volatile uint32_t s_head = 0;
+static uint32_t s_seq = 0;
+static uint32_t s_head = 0;
 
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -42,8 +42,10 @@ static inline void push_line(const char *s) {
   tmp[n] = '\0';
 
   portENTER_CRITICAL(&s_mux);
-  const uint32_t seq = ++s_seq;
-  const uint32_t idx = (s_head++) % WEB_LOG_LINES;
+  // Избегаем предупреждения про volatile++ (и нам не нужен volatile под critical section)
+  const uint32_t seq = (s_seq = (s_seq + 1));
+  const uint32_t idx = (s_head % WEB_LOG_LINES);
+  s_head = s_head + 1;
   s_lines[idx].seq = seq;
   s_lines[idx].len = (uint16_t)n;
   memcpy(s_lines[idx].data, tmp, n + 1);

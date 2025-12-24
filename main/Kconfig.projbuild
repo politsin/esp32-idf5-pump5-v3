@@ -36,10 +36,13 @@ menu "Example Configuration"
 endmenu
 
 menu "SPIFFS Configuration"
-    config SPIFFS_MAX_PARTITIONS
+    # В ESP-IDF уже есть глобальный символ SPIFFS_MAX_PARTITIONS в components/spiffs/Kconfig.
+    # Здесь используем проектный префикс, чтобы не было конфликта имён и предупреждения:
+    # "Symbol SPIFFS_MAX_PARTITIONS defined in multiple locations".
+    config PUMP_SPIFFS_MAX_PARTITIONS
         int "Maximum Number of Partitions"
         default 3
         range 1 10
         help
-            Define maximum number of partitions that can be mounted.
+            Define maximum number of SPIFFS partitions that can be mounted (project-local).
 endmenu

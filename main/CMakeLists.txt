@@ -38,6 +38,8 @@ idf_component_register(
     esp_http_client
     esp_http_server
     driver
+    spi_flash
+    esp_hw_support
     spiffs
     esp_partition
     nvs_flash
