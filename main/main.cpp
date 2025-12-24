@@ -76,8 +76,7 @@ extern "C" void app_main(void) {
   uint32_t min = 768 + configSTACK_OVERHEAD_TOTAL;
 
   // ИНИЦИАЛИЗАЦИЯ I2C ДО ВСЕХ ТАСКОВ (и до WiFi/Telegram)
-  i2c_init(true);
-  ESP_ERROR_CHECK(i2cdev_init());
+  ESP_ERROR_CHECK(i2c_init(true));
   {
     // Инициализация расширителя портов
     esp_err_t err = ioexp_init();
