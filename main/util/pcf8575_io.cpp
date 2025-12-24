@@ -82,6 +82,48 @@ esp_err_t ioexp_init(void)
     return ESP_OK;
 }
 
+bool ioexp_is_initialized(void) { return initialized; }
+
+esp_err_t ioexp_get_shadow(uint16_t *out_shadow) {
+    if (!out_shadow) return ESP_ERR_INVALID_ARG;
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    *out_shadow = port_shadow;
+    return ESP_OK;
+}
+
+static inline bool is_bit_on_active_low(uint16_t shadow, int bit_index) {
+    // active-low: 0 = ON, 1 = OFF
+    return (((shadow >> bit_index) & 0x1) == 0);
+}
+
+bool ioexp_get_pump(void) {
+    if (!initialized) return false;
+    return is_bit_on_active_low(port_shadow, PUMP_BIT);
+}
+
+bool ioexp_get_valve(int valve_index_1_based) {
+    if (!initialized) return false;
+    int bit = -1;
+    switch (valve_index_1_based) {
+        case 1: bit = VALVE1_BIT; break;
+        case 2: bit = VALVE2_BIT; break;
+        case 3: bit = VALVE3_BIT; break;
+        case 4: bit = VALVE4_BIT; break;
+        default: return false;
+    }
+    return is_bit_on_active_low(port_shadow, bit);
+}
+
+esp_err_t ioexp_toggle_pump(void) {
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    return ioexp_set_pump(!ioexp_get_pump());
+}
+
+esp_err_t ioexp_toggle_valve(int valve_index_1_based) {
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    return ioexp_set_valve(valve_index_1_based, !ioexp_get_valve(valve_index_1_based));
+}
+
 esp_err_t ioexp_set_pump(bool level)
 {
     if (!initialized) {

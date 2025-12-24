@@ -10,6 +10,7 @@
 #include "wifi_config.h"
 #include "telegram_manager.h"
 #include "../task/telegramTask.h"
+#include "web_server.h"
 
 static const char *TAG = "WIFI_MANAGER";
 
@@ -126,6 +127,9 @@ esp_err_t wifi_init(void) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
+
+  // Веб-интерфейс/OTA (можно стартовать сразу после инициализации TCP/IP стека)
+  (void)web_server_start();
 
   ESP_LOGI(TAG, "wifi_init finished.");
 

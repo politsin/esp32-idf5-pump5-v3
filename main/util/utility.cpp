@@ -1,6 +1,9 @@
 // #include "utility.h"
-#include "esp_spi_flash.h"
-#include "esp_system.h"
+#include <stdint.h>
+#include <inttypes.h>
+#include <esp_chip_info.h>
+#include <esp_flash.h>
+#include <esp_system.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <esp_log.h>
@@ -11,17 +14,20 @@ using std::string;
 #define UTILTAG "UTIL"
 void chip_info(void) {
   /* Print chip information */
-  esp_chip_info_t chip_info;
-  esp_chip_info(&chip_info);
-  printf("This is ESP32 chip with %d CPU cores, WiFi%s%s, ", chip_info.cores,
-         (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-         (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+  esp_chip_info_t info;
+  esp_chip_info(&info);
+  printf("This is ESP32 chip with %d CPU cores, WiFi%s%s, ", info.cores,
+         (info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+         (info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
 
-  printf("silicon revision %d, ", chip_info.revision);
+  printf("silicon revision %d, ", info.revision);
 
-  printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
-         (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded"
-                                                       : "external");
+  uint32_t flash_size_bytes = 0;
+  // NULL => esp_flash_default_chip
+  (void)esp_flash_get_physical_size(nullptr, &flash_size_bytes);
+  const uint32_t flash_mb = (uint32_t)(flash_size_bytes / (1024UL * 1024UL));
+  printf("%" PRIu32 "MB %s flash\n", flash_mb,
+         (info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }
 
 void restart(void) {

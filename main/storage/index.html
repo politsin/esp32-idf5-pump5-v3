@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>pump control</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <details class="card">
+      <summary>OTA прошивка</summary>
+      <div class="row" style="align-items: flex-start; margin-top: 10px">
+        <input type="file" id="fw" accept=".bin" />
+        <button class="btn" id="btn-ota">Загрузить</button>
+      </div>
+      <div class="muted" id="ota-msg"></div>
+    </details>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Устройство онлайн</h2>
+        <table id="info">
+          <tr><td class="k">IP</td><td id="ip">—</td></tr>
+          <tr><td class="k">MAC (STA)</td><td id="mac">—</td></tr>
+          <tr><td class="k">RSSI</td><td id="rssi">—</td></tr>
+          <tr><td class="k">Free heap</td><td id="heap">—</td></tr>
+          <tr><td class="k">Uptime</td><td id="uptime">—</td></tr>
+          <tr><td class="k">App</td><td id="app">—</td></tr>
+          <tr><td class="k">Version</td><td id="ver">—</td></tr>
+          <tr><td class="k">ESP-IDF</td><td id="idf">—</td></tr>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Управление (PCF8575)</h2>
+        <div class="row">
+          <span class="lamp off" id="lamp-pump"></span><span class="name">Насос</span>
+          <button class="btn" data-toggle="pump">Toggle</button>
+        </div>
+        <div class="row">
+          <span class="lamp off" id="lamp-p1"></span><span class="name">Клапан 1</span>
+          <button class="btn" data-toggle="p1">Toggle</button>
+        </div>
+        <div class="row">
+          <span class="lamp off" id="lamp-p2"></span><span class="name">Клапан 2</span>
+          <button class="btn" data-toggle="p2">Toggle</button>
+        </div>
+        <div class="row">
+          <span class="lamp off" id="lamp-p3"></span><span class="name">Клапан 3</span>
+          <button class="btn" data-toggle="p3">Toggle</button>
+        </div>
+        <div class="row">
+          <span class="lamp off" id="lamp-p4"></span><span class="name">Клапан 4</span>
+          <button class="btn" data-toggle="p4">Toggle</button>
+        </div>
+        <div class="muted">Статус обновляется автоматически (AJAX /api/status).</div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="headrow">
+        <h2 style="margin: 0">Журнал</h2>
+        <button class="btn btn-small" id="btn-log-toggle">Включить</button>
+      </div>
+      <div class="logwrap" id="logwrap" style="display: none">
+        <pre id="logbox"></pre>
+      </div>
+      <div class="muted" id="log-hint">По умолчанию журнал выключен (чтобы не держать pending запросы).</div>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+
+

@@ -18,5 +18,5 @@ endforeach()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(esp32-idf5-pump5-v3)
 
-# Create a SPIFFS image from the contents of the 'font' directory
+# Create a SPIFFS image for the 'storage' partition from the contents of main/storage
 spiffs_create_partition_image(storage main/storage FLASH_IN_PROJECT)

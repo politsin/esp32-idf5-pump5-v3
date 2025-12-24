@@ -24,14 +24,22 @@ idf_component_register(
     "util/telegram_manager.cpp"
     "util/i2c.cpp"
     "util/pcf8575_io.cpp"
+    "util/utility.cpp"
+    "util/spiffs_fs.cpp"
+    "util/web_log.cpp"
+    "util/web_server.cpp"
   INCLUDE_DIRS 
     "."
     "util"
     "task"
   REQUIRES
     json
+    app_update
     esp_http_client
+    esp_http_server
     driver
+    spiffs
+    esp_partition
     nvs_flash
     esp_wifi
     esp_https_ota
@@ -40,4 +48,6 @@ idf_component_register(
     i2cdev
     pcf8575
     esp32-c3-rotary-encoder
+  PRIV_REQUIRES
+    mbedtls
 )

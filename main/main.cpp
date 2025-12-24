@@ -7,6 +7,9 @@
 #include <stdio.h>
 
 #include "util/config.h"
+#include "util/utility.h"
+#include "util/web_log.h"
+#include "util/spiffs_fs.h"
 #include "util/wifi_manager.h"
 #include "util/telegram_manager.h"
 #include <main.h>
@@ -51,6 +54,9 @@ extern TaskHandle_t timeTaskHandle;
 
 extern "C" void app_main(void) {
   ESP_LOGI(MAINTAG, "=== APP MAIN STARTED ===");
+  web_log_init();          // перехват логов для веб-журнала
+  (void)spiffs_fs_mount(); // статика веб-морды из storage (SPIFFS)
+  chip_info();             // печать инфо о чипе/flash
   config_init();
   ESP_LOGI(MAINTAG, "Config initialized");
   
