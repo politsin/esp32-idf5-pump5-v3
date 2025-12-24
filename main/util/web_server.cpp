@@ -15,7 +15,6 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-#include "mbedtls/base64.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,77 +27,6 @@ static const char *TAG = "WEB_SERVER";
 
 static httpd_handle_t s_server = nullptr;
 static bool s_ota_in_progress = false;
-
-#ifndef WEB_BASIC_AUTH_USER
-#define WEB_BASIC_AUTH_USER "admin"
-#endif
-
-#ifndef WEB_BASIC_AUTH_PASS
-#define WEB_BASIC_AUTH_PASS "admin"
-#endif
-
-static bool s_auth_inited = false;
-static char s_expected_auth[160]; // "Basic <base64(user:pass)>"
-
-static void init_basic_auth_once() {
-  if (s_auth_inited) return;
-  s_auth_inited = true;
-  s_expected_auth[0] = '\0';
-
-  // Пустые креды => без авторизации
-  if (WEB_BASIC_AUTH_USER[0] == '\0' || WEB_BASIC_AUTH_PASS[0] == '\0') {
-    return;
-  }
-
-  char plain[96];
-  const int pn = snprintf(plain, sizeof(plain), "%s:%s", WEB_BASIC_AUTH_USER, WEB_BASIC_AUTH_PASS);
-  if (pn <= 0 || (size_t)pn >= sizeof(plain)) {
-    ESP_LOGW(TAG, "BasicAuth: credentials too long, auth disabled");
-    return;
-  }
-
-  unsigned char b64[128];
-  size_t out_len = 0;
-  const int rc = mbedtls_base64_encode(b64, sizeof(b64), &out_len,
-                                      reinterpret_cast<const unsigned char *>(plain),
-                                      strlen(plain));
-  if (rc != 0 || out_len == 0 || out_len >= sizeof(b64)) {
-    ESP_LOGW(TAG, "BasicAuth: base64 encode failed, auth disabled");
-    return;
-  }
-
-  b64[out_len] = '\0';
-  const int an = snprintf(s_expected_auth, sizeof(s_expected_auth), "Basic %s",
-                          reinterpret_cast<const char *>(b64));
-  if (an <= 0 || (size_t)an >= sizeof(s_expected_auth)) {
-    s_expected_auth[0] = '\0';
-    ESP_LOGW(TAG, "BasicAuth: header too long, auth disabled");
-  }
-}
-
-static bool is_authorized(httpd_req_t *req) {
-  init_basic_auth_once();
-  if (s_expected_auth[0] == '\0') {
-    return true;
-  }
-
-  const size_t len = httpd_req_get_hdr_value_len(req, "Authorization");
-  if (len == 0 || len >= sizeof(s_expected_auth)) {
-    return false;
-  }
-  char hdr[160];
-  if (httpd_req_get_hdr_value_str(req, "Authorization", hdr, sizeof(hdr)) != ESP_OK) {
-    return false;
-  }
-  return strcmp(hdr, s_expected_auth) == 0;
-}
-
-static esp_err_t send_unauthorized(httpd_req_t *req) {
-  httpd_resp_set_status(req, "401 Unauthorized");
-  httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"pump\"");
-  httpd_resp_set_type(req, "text/plain; charset=utf-8");
-  return httpd_resp_send(req, "Unauthorized", HTTPD_RESP_USE_STRLEN);
-}
 
 static void format_mac(const uint8_t mac[6], char *out, size_t out_len) {
   if (!out || out_len < 18) return;
@@ -139,10 +67,6 @@ static const char *content_type_for(const char *path) {
 }
 
 static esp_err_t send_file_from_spiffs(httpd_req_t *req, const char *rel_uri) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   (void)spiffs_fs_mount();
 
   const char *uri = rel_uri ? rel_uri : req->uri;
@@ -200,10 +124,6 @@ static esp_err_t send_file_from_spiffs(httpd_req_t *req, const char *rel_uri) {
 }
 
 static esp_err_t info_json_get_handler(httpd_req_t *req) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   httpd_resp_set_type(req, "application/json");
 
   char ip[32];
@@ -246,10 +166,6 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_status_get_handler(httpd_req_t *req) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   httpd_resp_set_type(req, "application/json");
 
   // Веб должен показывать/управлять расширителем, а не GPIO ESP32
@@ -274,10 +190,6 @@ static esp_err_t api_status_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_toggle_post_handler(httpd_req_t *req) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   if (!ioexp_is_initialized()) {
     httpd_resp_set_status(req, "503 Service Unavailable");
     return httpd_resp_send(req, "ioexp not initialized", HTTPD_RESP_USE_STRLEN);
@@ -321,10 +233,6 @@ static esp_err_t api_toggle_post_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_log_get_handler(httpd_req_t *req) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   web_log_init();
   httpd_resp_set_type(req, "text/plain; charset=utf-8");
 
@@ -362,10 +270,6 @@ static esp_err_t api_log_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_ota_post_handler(httpd_req_t *req) {
-  if (!is_authorized(req)) {
-    return send_unauthorized(req);
-  }
-
   if (s_ota_in_progress) {
     httpd_resp_set_status(req, "409 Conflict");
     return httpd_resp_send(req, "OTA already in progress", HTTPD_RESP_USE_STRLEN);
@@ -502,7 +406,7 @@ esp_err_t web_server_start(void) {
   files.handler = wildcard_get_handler;
   httpd_register_uri_handler(s_server, &files);
 
-  ESP_LOGI(TAG, "Web server started on :80 (BasicAuth user=%s)", WEB_BASIC_AUTH_USER);
+  ESP_LOGI(TAG, "Web server started on :80 (no auth)");
   return ESP_OK;
 }
 

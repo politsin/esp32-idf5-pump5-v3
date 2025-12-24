@@ -18,6 +18,10 @@ void i2cScanTask(void *pvParam);
 esp_err_t i2c_init(bool scan);
 esp_err_t iot_i2c_scan(uint8_t i2c_scan_count);
 
+// Последний результат i2c-скана в виде строки для UI, например: "i2c: 0x20 0x3C"
+// Если ничего не найдено: "i2c: --"
+const char *i2c_last_scan_summary(void);
+
 #define CHECK(x) do { esp_err_t __; if ((__ = x) != ESP_OK) return __; } while (0)
 #define CHECK_ARG(VAL) do { if (!(VAL)) return ESP_ERR_INVALID_ARG; } while (0)
 

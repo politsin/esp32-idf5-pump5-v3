@@ -14,6 +14,7 @@ typedef gpio_num_t Pintype;
 #include "buttonTask.h"
 
 #include "util/config.h"
+#include "util/i2c.h"
 
 #include <benchmark/lv_demo_benchmark.h>
 #include <esp_timer.h>
@@ -148,6 +149,16 @@ void screenTask(void *pvParam) {
   snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
   lv_label_set_text(total_time_label, total_txt);
 
+  // Под Total выводим список найденных I2C адресов
+  lv_obj_t *i2c_summary_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(i2c_summary_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+  // Сдвигаем правее на 60px относительно Total (Total стоит с -8)
+  lv_obj_align(i2c_summary_label, LV_ALIGN_TOP_RIGHT, 60,
+               valve_label_y_start + NUM_VALVES * valve_label_y_step + 10 + 18);
+  lv_obj_set_width(i2c_summary_label, 150);
+  lv_label_set_long_mode(i2c_summary_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
+
   // Перемещаем кнопки вниз экрана в линию
   int btnY_bottom = 100; // Было 120, стало 100 (подняли ещё выше)
   int btnSpacing = 35;
@@ -257,6 +268,7 @@ void screenTask(void *pvParam) {
             char total_txt[32];
             snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
             lv_label_set_text(total_time_label, total_txt);
+            lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
             app_lvgl_unlock();
           }
         }
@@ -339,6 +351,7 @@ void screenTask(void *pvParam) {
           char total_txt[32];
           snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
+          lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
           app_lvgl_unlock();
         }
       }
@@ -401,6 +414,7 @@ void screenTask(void *pvParam) {
           char total_txt[32];
           snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
+          lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
           app_lvgl_unlock();
         }
       } else {

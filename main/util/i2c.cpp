@@ -10,6 +10,27 @@
 
 #include "i2c.h"
 
+static char s_i2c_last_scan_summary[96] = "i2c: --";
+
+const char *i2c_last_scan_summary(void) {
+  return s_i2c_last_scan_summary;
+}
+
+static void update_i2c_last_scan_summary(const uint8_t *addrs, size_t count) {
+  size_t pos = 0;
+  pos += (size_t)snprintf(s_i2c_last_scan_summary + pos, sizeof(s_i2c_last_scan_summary) - pos, "i2c:");
+  if (count == 0 || pos >= sizeof(s_i2c_last_scan_summary)) {
+    snprintf(s_i2c_last_scan_summary + pos, sizeof(s_i2c_last_scan_summary) - pos, " --");
+    return;
+  }
+  for (size_t i = 0; i < count; i++) {
+    if (pos >= sizeof(s_i2c_last_scan_summary)) break;
+    const int n = snprintf(s_i2c_last_scan_summary + pos, sizeof(s_i2c_last_scan_summary) - pos, " 0x%02X", (unsigned)addrs[i]);
+    if (n <= 0) break;
+    pos += (size_t)n;
+  }
+}
+
 esp_err_t i2c_init(bool scan) {
 #ifdef CONFIG_IOT_I2C
   static bool s_inited = false;
@@ -50,6 +71,10 @@ esp_err_t i2c_init(bool scan) {
 
 esp_err_t iot_i2c_scan(uint8_t i2c_scan_count = 1) {
 #ifdef CONFIG_IOT_I2C_SCAN
+  // Собираем список найденных адресов, чтобы показать на экране.
+  uint8_t found_addrs[32];
+  size_t found_n = 0;
+
   printf("I2C scan on port %d (SDA=%d SCL=%d)\n", (int)I2C_NUM_0, (int)I2C_SDA, (int)I2C_SCL);
   for (uint8_t j = 0; j < i2c_scan_count; j++) {
     esp_err_t res;
@@ -67,11 +92,24 @@ esp_err_t iot_i2c_scan(uint8_t i2c_scan_count = 1) {
         printf(" %.2x", i);
       else
         printf(" --");
+
+      if (res == ESP_OK && found_n < (sizeof(found_addrs) / sizeof(found_addrs[0]))) {
+        // не добавляем дубликаты (на случай нескольких проходов/ошибок)
+        bool exists = false;
+        for (size_t k = 0; k < found_n; k++) {
+          if (found_addrs[k] == i) { exists = true; break; }
+        }
+        if (!exists) {
+          found_addrs[found_n++] = i;
+        }
+      }
       i2c_cmd_link_delete(cmd);
     }
     printf("\n\n");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
+
+  update_i2c_last_scan_summary(found_addrs, found_n);
 #endif
   return ESP_OK;
 }

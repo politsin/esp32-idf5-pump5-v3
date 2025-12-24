@@ -50,6 +50,4 @@ idf_component_register(
     i2cdev
     pcf8575
     esp32-c3-rotary-encoder
-  PRIV_REQUIRES
-    mbedtls
 )
