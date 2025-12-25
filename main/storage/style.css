@@ -22,14 +22,23 @@ td.k{color:#555;}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;margin-top:12px;}
 @media (max-width: 760px){.grid{grid-template-columns:1fr;}}
 
+.headrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.btn-small{padding:6px 10px;border-radius:10px;font-size:12px;}
+
+.cfg-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px;}
+.cfg-row{display:grid;grid-template-columns:220px 1fr;gap:10px;align-items:center;}
+.cfg-k{color:#333;font-size:13px;}
+.cfg-in{padding:8px 10px;border:1px solid #ddd;border-radius:10px;font-family:ui-monospace,Consolas,monospace;}
+
+.stats-grid{display:grid;grid-template-columns:1fr;gap:8px;}
+.stats-row{display:flex;align-items:center;justify-content:space-between;border:1px solid #eee;border-radius:10px;padding:8px 10px;background:#fafafa;}
+.stats-row .k{color:#555;}
+
 details.card{padding:0;}
 details.card > summary{cursor:pointer;list-style:none;padding:14px;font-weight:600;}
 details.card > summary::-webkit-details-marker{display:none;}
 details.card[open] > summary{border-bottom:1px solid #eee;}
 details.card > :not(summary){padding:0 14px 14px 14px;}
-
-.headrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
-.btn-small{padding:6px 10px;border-radius:10px;font-size:12px;}
 
 .ioexp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;}
 

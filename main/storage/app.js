@@ -50,6 +50,96 @@ async function refresh(){
   }catch(e){}
 }
 
+async function refreshStats(){
+  try{
+    const r=await fetch('/api/stats',{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(!j||!j.ok) return;
+    if($('st-ticks')) $('st-ticks').textContent = (j.ticks!=null)?String(j.ticks):'—';
+    if($('st-target')) $('st-target').textContent = (j.water_target!=null)?String(j.water_target):'—';
+    // На главной (таблица "Устройство онлайн")
+    if($('ticks')) $('ticks').textContent = (j.ticks!=null)?String(j.ticks):'—';
+    if($('target')) $('target').textContent = (j.water_target!=null)?String(j.water_target):'—';
+    if($('st-today')) $('st-today').textContent = (j.banks_today!=null)?String(j.banks_today):'—';
+    if($('st-total')) $('st-total').textContent = (j.banks_total!=null)?String(j.banks_total):'—';
+    if($('st-in-today')) $('st-in-today').value = (j.banks_today!=null)?String(j.banks_today):'';
+    if($('st-in-total')) $('st-in-total').value = (j.banks_total!=null)?String(j.banks_total):'';
+    if($('st-msg')) $('st-msg').textContent = '—';
+  }catch(e){}
+}
+
+async function saveStats(){
+  const msg=$('st-msg');
+  try{
+    const today = parseInt(($('st-in-today')||{}).value||'0',10);
+    const total = parseInt(($('st-in-total')||{}).value||'0',10);
+    if(msg) msg.textContent='Сохранение...';
+    const qs = `today=${encodeURIComponent(String(today))}&total=${encodeURIComponent(String(total))}`;
+    const r=await fetch('/api/stats?'+qs,{method:'POST'});
+    if(!r.ok){
+      const t=await r.text();
+      if(msg) msg.textContent='Ошибка: '+t;
+      return;
+    }
+    if(msg) msg.textContent='OK';
+    await refreshStats();
+  }catch(e){
+    if(msg) msg.textContent='Ошибка';
+  }
+}
+
+async function refreshI2c(){
+  try{
+    const r=await fetch('/api/i2c',{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(!j||!j.ok) return;
+    if($('i2c-summary')) $('i2c-summary').textContent = j.summary || '—';
+  }catch(e){}
+}
+
+async function refreshConfig(){
+  try{
+    const r=await fetch('/api/config',{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(!j||!j.ok) return;
+    if($('cfg-steps')) $('cfg-steps').value = (j.steps!=null)?String(j.steps):'';
+    if($('cfg-enc')) $('cfg-enc').value = (j.encoder!=null)?String(j.encoder):'';
+    if($('cfg-flush1')) $('cfg-flush1').value = (j.flush_valve_ms!=null)?String(j.flush_valve_ms):'';
+    if($('cfg-flushall')) $('cfg-flushall').value = (j.flush_all_ms!=null)?String(j.flush_all_ms):'';
+    if($('cfg-dryms')) $('cfg-dryms').value = (j.dry_run_timeout_ms!=null)?String(j.dry_run_timeout_ms):'';
+    if($('cfg-drymin')) $('cfg-drymin').value = (j.dry_run_min_ticks!=null)?String(j.dry_run_min_ticks):'';
+    if($('cfg-meta')) $('cfg-meta').textContent = (j.water_target!=null)?('water_target=' + j.water_target + ' ticks'):'—';
+    if($('cfg-msg')) $('cfg-msg').textContent = '';
+  }catch(e){}
+}
+
+async function saveConfig(){
+  const msg=$('cfg-msg');
+  try{
+    const steps = parseInt(($('cfg-steps')||{}).value||'0',10)||0;
+    const enc = parseInt(($('cfg-enc')||{}).value||'0',10)||0;
+    const f1 = parseInt(($('cfg-flush1')||{}).value||'0',10)||0;
+    const f2 = parseInt(($('cfg-flushall')||{}).value||'0',10)||0;
+    const dryms = parseInt(($('cfg-dryms')||{}).value||'0',10)||0;
+    const drymin = parseInt(($('cfg-drymin')||{}).value||'0',10)||0;
+    if(msg) msg.textContent='Сохранение...';
+    const qs = `steps=${encodeURIComponent(String(steps))}&encoder=${encodeURIComponent(String(enc))}&flush_valve_ms=${encodeURIComponent(String(f1))}&flush_all_ms=${encodeURIComponent(String(f2))}&dry_run_timeout_ms=${encodeURIComponent(String(dryms))}&dry_run_min_ticks=${encodeURIComponent(String(drymin))}`;
+    const r=await fetch('/api/config?'+qs,{method:'POST'});
+    if(!r.ok){
+      const t=await r.text();
+      if(msg) msg.textContent='Ошибка: '+t;
+      return;
+    }
+    if(msg) msg.textContent='OK';
+    await refreshConfig();
+  }catch(e){
+    if(msg) msg.textContent='Ошибка';
+  }
+}
+
 function bit(v, b){ return ((v>>b)&1) ? 1 : 0; }
 
 function buildIoexpGrid(){
@@ -169,6 +259,8 @@ async function refreshInfo(){
     if($('uptime')) $('uptime').textContent=(j.uptime_s!=null)?(j.uptime_s+' s'):'—';
     if($('app')) $('app').textContent=j.app||'—';
     if($('ver')) $('ver').textContent=j.version||'—';
+    if($('build')) $('build').textContent=((j.build_date||'')+' '+(j.build_time||'')).trim()||'—';
+    if($('sha')) $('sha').textContent=j.elf_sha8||'—';
     if($('idf')) $('idf').textContent=j.idf||'—';
   }catch(e){}
 }
@@ -267,9 +359,16 @@ setLogUi();
 
 buildIoexpGrid();
 if($('btn-ioexp-refresh')) $('btn-ioexp-refresh').addEventListener('click', refreshIoexp);
+if($('btn-i2c-refresh')) $('btn-i2c-refresh').addEventListener('click', refreshI2c);
+if($('btn-cfg-reload')) $('btn-cfg-reload').addEventListener('click', refreshConfig);
+if($('btn-cfg-save')) $('btn-cfg-save').addEventListener('click', saveConfig);
+if($('btn-st-save')) $('btn-st-save').addEventListener('click', saveStats);
 
 setInterval(refresh, 600); refresh();
 setInterval(refreshInfo, 1500); refreshInfo();
 setInterval(refreshIoexp, 350); refreshIoexp();
+setInterval(refreshI2c, 1200); refreshI2c();
+setInterval(refreshStats, 1500); refreshStats();
+refreshConfig();
 
 

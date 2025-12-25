@@ -25,8 +25,12 @@
           <tr><td class="k">RSSI</td><td id="rssi">—</td></tr>
           <tr><td class="k">Free heap</td><td id="heap">—</td></tr>
           <tr><td class="k">Uptime</td><td id="uptime">—</td></tr>
+          <tr><td class="k">Тики (счётчик)</td><td id="ticks">—</td></tr>
+          <tr><td class="k">Цель (ticks)</td><td id="target">—</td></tr>
           <tr><td class="k">App</td><td id="app">—</td></tr>
           <tr><td class="k">Version</td><td id="ver">—</td></tr>
+          <tr><td class="k">Build</td><td id="build">—</td></tr>
+          <tr><td class="k">ELF SHA</td><td id="sha">—</td></tr>
           <tr><td class="k">ESP-IDF</td><td id="idf">—</td></tr>
         </table>
       </section>
@@ -58,8 +62,47 @@
     </div>
 
     <section class="card">
-      <h2>PCF8575 — все пины (00..07 и 17..10)</h2>
-      <div class="muted">
+      <h2>Настройки</h2>
+      <div class="muted">Уставки сохраняются в NVS. Применение — только когда устройство не работает (idle).</div>
+      <div class="cfg-grid">
+        <label class="cfg-row">
+          <span class="cfg-k">Цель (ticks)</span>
+          <input id="cfg-steps" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Энкодер (offset ticks)</span>
+          <input id="cfg-enc" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">FLUSH: 1 клапан (мс)</span>
+          <input id="cfg-flush1" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">FLUSH: все клапаны (мс)</span>
+          <input id="cfg-flushall" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Авария: нет тиков (мс)</span>
+          <input id="cfg-dryms" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Авария: минимум тиков</span>
+          <input id="cfg-drymin" class="cfg-in" type="number" step="1" />
+        </label>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <div class="muted" id="cfg-meta">—</div>
+        <div class="row" style="margin:0">
+          <button class="btn btn-small" id="btn-cfg-reload">Обновить</button>
+          <button class="btn btn-small" id="btn-cfg-save">Сохранить</button>
+        </div>
+      </div>
+      <div class="muted" id="cfg-msg"></div>
+    </section>
+
+    <details class="card">
+      <summary>PCF8575 — все пины (00..07 и 17..10)</summary>
+      <div class="muted" style="margin-top:10px">
         Значение в вебе — это <b>реально прочитанный</b> порт PCF8575. Управление: запись <b>0</b> тянет линию вниз (LOW),
         запись <b>1</b> отпускает/подтягивает вверх (HIGH, квази-вход). Нажатия кнопок на устройстве будут видны тут.
       </div>
@@ -68,7 +111,41 @@
         <button class="btn btn-small" id="btn-ioexp-refresh">Обновить</button>
       </div>
       <div id="ioexp-grid" class="ioexp-grid"></div>
-    </section>
+    </details>
+
+    <details class="card">
+      <summary>I2C устройства на шине</summary>
+      <div class="row" style="justify-content: space-between; margin-top:10px">
+        <div class="muted" id="i2c-summary">—</div>
+        <button class="btn btn-small" id="btn-i2c-refresh">Обновить</button>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary>Статистика банок</summary>
+      <div class="stats-grid" style="margin-top:10px">
+        <div class="stats-row"><span class="k">Тики (счётчик)</span><span id="st-ticks">—</span></div>
+        <div class="stats-row"><span class="k">Цель (ticks)</span><span id="st-target">—</span></div>
+        <div class="stats-row"><span class="k">Сегодня</span><span id="st-today">—</span></div>
+        <div class="stats-row"><span class="k">Всего</span><span id="st-total">—</span></div>
+      </div>
+      <div class="muted" style="margin-top:10px">Редактирование (сохранится в NVS):</div>
+      <div class="cfg-grid">
+        <label class="cfg-row">
+          <span class="cfg-k">Сегодня</span>
+          <input id="st-in-today" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Всего</span>
+          <input id="st-in-total" class="cfg-in" type="number" step="1" />
+        </label>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <div class="muted" id="st-msg">—</div>
+        <button class="btn btn-small" id="btn-st-save">Сохранить</button>
+      </div>
+      <div class="muted">Эти счётчики сохраняются в NVS и используются в вечернем отчёте.</div>
+    </details>
 
     <section class="card">
       <div class="headrow">

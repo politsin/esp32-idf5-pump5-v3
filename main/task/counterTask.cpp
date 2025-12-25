@@ -45,6 +45,12 @@ static bool warning_sent = false;
 // Флаг режима промывки
 static bool flush_mode = false;
 
+// Тайминги промывки (мс) — берём из NVS (config.cpp кэширует значения)
+static int32_t g_flush_valve_ms = 1000;
+static int32_t g_flush_all_ms = 2000;
+static int32_t g_dry_run_timeout_ms = 3000;
+static int32_t g_dry_run_min_ticks = 50;
+
 // Переменная для отслеживания изменений клапанов
 static int32_t last_valve = 0;
 
@@ -207,10 +213,25 @@ void counterTask(void *pvParam) {
   }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
-  // config->get_item("steps", app_config.steps);
-  config->get_item("encoder", app_config.encoder);
-  ESP_LOGW(COUNTER_TAG, "Steps FROM MEM: %lu", app_config.steps);
-  ESP_LOGW(COUNTER_TAG, "Enc FROM MEM: %lu", app_config.encoder);
+  // Уставки из NVS (через config.cpp кэш)
+  {
+    int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
+    config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
+    if (steps > 0) app_config.steps = (uint32_t)steps;
+    app_config.encoder = enc;
+    // Важно: app_state.encoder — это смещение, которое участвует в расчёте цели.
+    app_state.encoder = app_config.encoder;
+    g_flush_valve_ms = (f1 > 0) ? f1 : g_flush_valve_ms;
+    g_flush_all_ms = (f2 > 0) ? f2 : g_flush_all_ms;
+    int32_t dms = 0, dmin = 0;
+    config_get_cached_dry_run(&dms, &dmin);
+    if (dms > 0) g_dry_run_timeout_ms = dms;
+    if (dmin >= 0) g_dry_run_min_ticks = dmin;
+  }
+  ESP_LOGW(COUNTER_TAG, "Settings: steps=%lu encoder=%ld flush_valve_ms=%ld flush_all_ms=%ld",
+           (unsigned long)app_config.steps, (long)app_state.encoder, (long)g_flush_valve_ms, (long)g_flush_all_ms);
+  ESP_LOGW(COUNTER_TAG, "Dry-run protection: timeout_ms=%ld min_ticks=%ld",
+           (long)g_dry_run_timeout_ms, (long)g_dry_run_min_ticks);
 
   // Variables for timing
   bool isOn = false;
@@ -364,7 +385,7 @@ void counterTask(void *pvParam) {
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
-        // Делаем 2 круга: каждый клапан на 1 секунду
+        // Делаем 2 круга: каждый клапан на g_flush_valve_ms миллисекунд
         for (int round = 0; round < 2; round++) {
           for (int valve = 1; valve <= NUM_VALVES; valve++) {
             // Проверяем STOP каждые 100мс
@@ -388,8 +409,9 @@ void counterTask(void *pvParam) {
             xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
             ESP_LOGW(COUNTER_TAG, "Flush: valve %ld, round %d", (long)valve, round + 1);
             
-            // Ждём 1 секунду с проверкой STOP каждые 100мс
-            for (int i = 0; i < 10; i++) {
+            // Ждём g_flush_valve_ms с проверкой STOP каждые 100мс
+            const int loops = (g_flush_valve_ms + 99) / 100;
+            for (int i = 0; i < loops; i++) {
               if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
                 if (stop_check & BTN_STOP_BIT) {
                   ESP_LOGW(COUNTER_TAG, "STOP during flush!");
@@ -411,8 +433,11 @@ void counterTask(void *pvParam) {
           }
         }
         
-        // Ждём 1 секунду и выключаем помпу
-        for (int i = 0; i < 10; i++) {
+        // Пауза между циклами и финальным открытием всех клапанов:
+        // используем тот же g_flush_valve_ms, чтобы у FLUSH было всего 2 уставки времени.
+        {
+          const int loops = (g_flush_valve_ms + 99) / 100;
+          for (int i = 0; i < loops; i++) {
           uint32_t stop_check = 0;
           if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (stop_check & BTN_STOP_BIT) {
@@ -420,21 +445,25 @@ void counterTask(void *pvParam) {
               goto flush_stopped;
             }
           }
+          }
         }
         
-        // В конце промывки ещё на 2 секунды открываем все клапаны
+        // В конце промывки открываем все клапаны на g_flush_all_ms
         ioexp_set_all_valves(true);
         app_state.valve = 0; // Специальное значение для отображения всех клапанов
         xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
         
-        // Ждём 2 секунды с проверкой STOP
-        for (int i = 0; i < 20; i++) {
+        // Ждём g_flush_all_ms с проверкой STOP каждые 100мс
+        {
+          const int loops = (g_flush_all_ms + 99) / 100;
+          for (int i = 0; i < loops; i++) {
           uint32_t stop_check = 0;
           if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (stop_check & BTN_STOP_BIT) {
               ESP_LOGW(COUNTER_TAG, "STOP during flush!");
               goto flush_stopped;
             }
+          }
           }
         }
         
@@ -613,9 +642,10 @@ void counterTask(void *pvParam) {
       TickType_t pump_work_time = xTaskGetTickCount() - pump_start_time;
       int32_t counter_increase = rot - pump_start_counter;
       
-      // Если помпа работает больше 6 секунд и счётчик увеличился меньше чем на 50
-      if (pump_work_time > pdMS_TO_TICKS(6000) && counter_increase < 50) {
-        ESP_LOGW(COUNTER_TAG, "DRY RUN PROTECTION! Pump working for 6s but counter increased only by %ld", counter_increase);
+      // Если помпа работает больше заданного времени и счётчик вырос меньше заданного порога
+      if (pump_work_time > pdMS_TO_TICKS(g_dry_run_timeout_ms) && counter_increase < g_dry_run_min_ticks) {
+        ESP_LOGW(COUNTER_TAG, "DRY RUN PROTECTION! Pump working for %ldms but counter increased only by %ld",
+                 (long)g_dry_run_timeout_ms, (long)counter_increase);
         
         // АВТОМАТИЧЕСКИ ОСТАНАВЛИВАЕМ РАБОТУ
         app_state.rock = false;
@@ -631,13 +661,14 @@ void counterTask(void *pvParam) {
         snprintf(
             message, sizeof(message),
             "🚰 🚨 АВАРИЯ! Счётчик не работает!\n"
-            "Помпа работала 6 секунд, но счётчик увеличился только на %ld\n"
+            "Помпа работала %ld мс, но счётчик увеличился только на %ld (порог %ld)\n"
             "Налито банок: %ld\n"
             "Расход в литрах: %ld\n"
             "Время работы: %02ld:%02ld\n"
             "Налито сегодня: %ld банок\n"
             "Всего налито с момента старта устройства: %ld банок",
-            counter_increase, app_state.banks_count, app_state.banks_count / 4,
+            (long)g_dry_run_timeout_ms, counter_increase, (long)g_dry_run_min_ticks,
+            app_state.banks_count, app_state.banks_count / 4,
             (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60), 
             app_state.today_banks_count, app_state.total_banks_count);
         telegram_send_message(message);

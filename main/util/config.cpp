@@ -18,6 +18,117 @@ std::shared_ptr<nvs::NVSHandle> config;
 
 bool config_reset = false;
 int restart_counter = 0;
+
+// Кэш уставок (загружается в config_init)
+static int32_t s_steps = 1075;          // цель в тиках (250мл по текущей калибровке)
+static int32_t s_encoder = 0;           // смещение в тиках
+static int32_t s_flush_valve_ms = 1000; // один клапан (мс)
+static int32_t s_flush_all_ms = 2000;   // все клапаны (мс)
+static int32_t s_dry_run_timeout_ms = 3000; // окно контроля "сухого хода" (мс) — по задаче 3 секунды
+static int32_t s_dry_run_min_ticks = 50;    // минимальный прирост тиков за это окно
+
+void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
+  if (steps) *steps = s_steps;
+  if (encoder) *encoder = s_encoder;
+  if (flush_valve_ms) *flush_valve_ms = s_flush_valve_ms;
+  if (flush_all_ms) *flush_all_ms = s_flush_all_ms;
+}
+
+void config_get_cached_dry_run(int32_t *dry_run_timeout_ms, int32_t *dry_run_min_ticks) {
+  if (dry_run_timeout_ms) *dry_run_timeout_ms = s_dry_run_timeout_ms;
+  if (dry_run_min_ticks) *dry_run_min_ticks = s_dry_run_min_ticks;
+}
+
+esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
+  if (!config) return ESP_ERR_INVALID_STATE;
+
+  int32_t tmp = 0;
+
+  // steps (цель в тиках)
+  esp_err_t err = config->get_item("steps", tmp);
+  if (err == ESP_OK) s_steps = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    // оставляем дефолт и запишем в NVS для прозрачности
+    (void)config->set_item("steps", s_steps);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading steps: %s", esp_err_to_name(err));
+  }
+
+  // encoder (смещение)
+  err = config->get_item("encoder", tmp);
+  if (err == ESP_OK) s_encoder = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("encoder", s_encoder);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading encoder: %s", esp_err_to_name(err));
+  }
+
+  // flush_valve_ms
+  err = config->get_item("flush_valve_ms", tmp);
+  if (err == ESP_OK) s_flush_valve_ms = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("flush_valve_ms", s_flush_valve_ms);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading flush_valve_ms: %s", esp_err_to_name(err));
+  }
+
+  // flush_all_ms
+  err = config->get_item("flush_all_ms", tmp);
+  if (err == ESP_OK) s_flush_all_ms = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("flush_all_ms", s_flush_all_ms);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading flush_all_ms: %s", esp_err_to_name(err));
+  }
+
+  // dry_run_timeout_ms
+  err = config->get_item("dry_run_timeout_ms", tmp);
+  if (err == ESP_OK) s_dry_run_timeout_ms = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("dry_run_timeout_ms", s_dry_run_timeout_ms);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading dry_run_timeout_ms: %s", esp_err_to_name(err));
+  }
+
+  // dry_run_min_ticks
+  err = config->get_item("dry_run_min_ticks", tmp);
+  if (err == ESP_OK) s_dry_run_min_ticks = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("dry_run_min_ticks", s_dry_run_min_ticks);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading dry_run_min_ticks: %s", esp_err_to_name(err));
+  }
+
+  // commit на случай, если какие-то ключи отсутствовали и мы их проставили дефолтами
+  (void)config->commit();
+
+  if (steps) *steps = s_steps;
+  if (encoder) *encoder = s_encoder;
+  if (flush_valve_ms) *flush_valve_ms = s_flush_valve_ms;
+  if (flush_all_ms) *flush_all_ms = s_flush_all_ms;
+  return ESP_OK;
+}
+
+esp_err_t config_save_pump_settings(int32_t steps, int32_t encoder, int32_t flush_valve_ms, int32_t flush_all_ms) {
+  if (!config) return ESP_ERR_INVALID_STATE;
+
+  s_steps = steps;
+  s_encoder = encoder;
+  s_flush_valve_ms = flush_valve_ms;
+  s_flush_all_ms = flush_all_ms;
+
+  esp_err_t err = config->set_item("steps", s_steps);
+  if (err != ESP_OK) return err;
+  err = config->set_item("encoder", s_encoder);
+  if (err != ESP_OK) return err;
+  err = config->set_item("flush_valve_ms", s_flush_valve_ms);
+  if (err != ESP_OK) return err;
+  err = config->set_item("flush_all_ms", s_flush_all_ms);
+  if (err != ESP_OK) return err;
+
+  return config->commit();
+}
+
 esp_err_t config_init() {
   // Initialize NVS
   esp_err_t err = nvs_flash_init();
@@ -89,6 +200,14 @@ esp_err_t config_init() {
 
     // Проверяем и сбрасываем дневной счётчик если нужно
     check_and_reset_daily_counter();
+
+    // Загружаем уставки (steps/encoder/flush тайминги) в кэш
+    {
+      int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
+      (void)config_load_pump_settings(&steps, &enc, &f1, &f2);
+      ESP_LOGW(CONFIG_TAG, "Pump settings: steps=%ld encoder=%ld flush_valve_ms=%ld flush_all_ms=%ld dry_run_timeout_ms=%ld dry_run_min_ticks=%ld",
+               (long)steps, (long)enc, (long)f1, (long)f2, (long)s_dry_run_timeout_ms, (long)s_dry_run_min_ticks);
+    }
 
     // Write
     ESP_LOGI(CONFIG_TAG, "Updating restart counter in NVS ... ");

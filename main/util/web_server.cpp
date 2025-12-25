@@ -12,12 +12,17 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include "config.h"
+#include "i2c.h"
+#include "main.h"
 
 #include "pcf8575_io.h"
 #include "spiffs_fs.h"
@@ -141,6 +146,18 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
 
   const esp_app_desc_t *app = esp_app_get_description();
 
+  // app->date/app->time/app_elf_sha256 помогают однозначно отличать сборки (особенно когда version не меняется).
+  // app_elf_sha256: 32 байта, выведем первые 8 байт (16 hex-символов) для компактности.
+  char sha8[17] = {0};
+  if (app) {
+    snprintf(sha8, sizeof(sha8),
+             "%02X%02X%02X%02X%02X%02X%02X%02X",
+             (unsigned)app->app_elf_sha256[0], (unsigned)app->app_elf_sha256[1],
+             (unsigned)app->app_elf_sha256[2], (unsigned)app->app_elf_sha256[3],
+             (unsigned)app->app_elf_sha256[4], (unsigned)app->app_elf_sha256[5],
+             (unsigned)app->app_elf_sha256[6], (unsigned)app->app_elf_sha256[7]);
+  }
+
   char body[512];
   const int n = snprintf(body, sizeof(body),
                          "{"
@@ -151,7 +168,10 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
                          "\"uptime_s\":%" PRIu32 ","
                          "\"app\":\"%s\","
                          "\"version\":\"%s\","
-                         "\"idf\":\"%s\""
+                         "\"idf\":\"%s\","
+                         "\"build_date\":\"%s\","
+                         "\"build_time\":\"%s\","
+                         "\"elf_sha8\":\"%s\""
                          "}",
                          ip[0] ? ip : "",
                          mac_s[0] ? mac_s : "",
@@ -160,9 +180,17 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
                          uptime_s,
                          app ? app->project_name : "",
                          app ? app->version : "",
-                         app ? app->idf_ver : "");
+                         app ? app->idf_ver : "",
+                         app ? app->date : "",
+                         app ? app->time : "",
+                         sha8);
   if (n <= 0) return httpd_resp_send_500(req);
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+// Для удобства: /status -> то же самое, что /info.json
+static esp_err_t status_json_get_handler(httpd_req_t *req) {
+  return info_json_get_handler(req);
 }
 
 static esp_err_t api_status_get_handler(httpd_req_t *req) {
@@ -187,6 +215,214 @@ static esp_err_t api_status_get_handler(httpd_req_t *req) {
                          pump ? 1 : 0, p1 ? 1 : 0, p2 ? 1 : 0, p3 ? 1 : 0, p4 ? 1 : 0);
   if (n <= 0) return httpd_resp_send_500(req);
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_stats_get_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+
+  char body[256];
+  const int n = snprintf(body, sizeof(body),
+                         "{"
+                         "\"ok\":1,"
+                         "\"ticks\":%ld,"
+                         "\"water_target\":%ld,"
+                         "\"banks_run\":%ld,"
+                         "\"banks_today\":%ld,"
+                         "\"banks_total\":%ld"
+                         "}",
+                         (long)app_state.water_current,
+                         (long)app_state.water_target,
+                         (long)app_state.banks_count,
+                         (long)app_state.today_banks_count,
+                         (long)app_state.total_banks_count);
+  if (n <= 0) return httpd_resp_send_500(req);
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_stats_post_handler(httpd_req_t *req) {
+  // Чтобы не ломать текущий цикл — запрещаем менять счётчики во время работы
+  if (app_state.is_on) {
+    httpd_resp_set_status(req, "409 Conflict");
+    return httpd_resp_send(req, "running", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char query[256];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "missing query", HTTPD_RESP_USE_STRLEN);
+  }
+
+  auto get_i32 = [&](const char *key, int32_t *out) -> bool {
+    char tmp[24];
+    if (httpd_query_key_value(query, key, tmp, sizeof(tmp)) != ESP_OK) return false;
+    *out = (int32_t)strtol(tmp, nullptr, 10);
+    return true;
+  };
+
+  int32_t today = app_state.today_banks_count;
+  int32_t total = app_state.total_banks_count;
+
+  int32_t v = 0;
+  if (get_i32("today", &v)) today = v;
+  if (get_i32("total", &v)) total = v;
+
+  if (today < 0 || today > 100000000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad today", HTTPD_RESP_USE_STRLEN);
+  }
+  if (total < 0 || total > 100000000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad total", HTTPD_RESP_USE_STRLEN);
+  }
+  if (today > total) {
+    // не запрещаем жёстко, но это почти всегда ошибка
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "today > total", HTTPD_RESP_USE_STRLEN);
+  }
+
+  // Пишем в NVS
+  esp_err_t err = save_today_banks_count(today);
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save today failed", HTTPD_RESP_USE_STRLEN);
+  }
+  err = save_total_banks_count(total);
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save total failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  // Обновляем runtime состояние
+  app_state.today_banks_count = today;
+  app_state.total_banks_count = total;
+
+  return api_stats_get_handler(req);
+}
+
+static esp_err_t api_i2c_get_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+
+  const char *sum = i2c_last_scan_summary();
+  char body[192];
+  const int n = snprintf(body, sizeof(body),
+                         "{"
+                         "\"ok\":1,"
+                         "\"summary\":\"%s\""
+                         "}",
+                         sum ? sum : "");
+  if (n <= 0) return httpd_resp_send_500(req);
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_config_get_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+
+  int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
+  config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
+  int32_t dry_ms = 0, dry_min = 0;
+  config_get_cached_dry_run(&dry_ms, &dry_min);
+  const int32_t target = steps + enc;
+
+  char body[256];
+  const int n = snprintf(body, sizeof(body),
+                         "{"
+                         "\"ok\":1,"
+                         "\"steps\":%ld,"
+                         "\"encoder\":%ld,"
+                         "\"water_target\":%ld,"
+                         "\"flush_valve_ms\":%ld,"
+                         "\"flush_all_ms\":%ld,"
+                         "\"dry_run_timeout_ms\":%ld,"
+                         "\"dry_run_min_ticks\":%ld"
+                         "}",
+                         (long)steps, (long)enc, (long)target, (long)f1, (long)f2, (long)dry_ms, (long)dry_min);
+  if (n <= 0) return httpd_resp_send_500(req);
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_config_post_handler(httpd_req_t *req) {
+  // Уставки меняем только в состоянии idle (чтобы не ломать текущий цикл налива/промывки)
+  if (app_state.is_on) {
+    httpd_resp_set_status(req, "409 Conflict");
+    return httpd_resp_send(req, "running", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char query[256];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "missing query", HTTPD_RESP_USE_STRLEN);
+  }
+
+  auto get_i32 = [&](const char *key, int32_t *out) -> bool {
+    char tmp[24];
+    if (httpd_query_key_value(query, key, tmp, sizeof(tmp)) != ESP_OK) return false;
+    *out = (int32_t)strtol(tmp, nullptr, 10);
+    return true;
+  };
+
+  int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
+  config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
+  int32_t dry_ms = 0, dry_min = 0;
+  config_get_cached_dry_run(&dry_ms, &dry_min);
+
+  int32_t v = 0;
+  if (get_i32("steps", &v)) steps = v;
+  if (get_i32("encoder", &v)) enc = v;
+  if (get_i32("flush_valve_ms", &v)) f1 = v;
+  if (get_i32("flush_all_ms", &v)) f2 = v;
+  if (get_i32("dry_run_timeout_ms", &v)) dry_ms = v;
+  if (get_i32("dry_run_min_ticks", &v)) dry_min = v;
+
+  // Валидация
+  if (steps < 1 || steps > 500000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad steps", HTTPD_RESP_USE_STRLEN);
+  }
+  if (enc < -500000 || enc > 500000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad encoder", HTTPD_RESP_USE_STRLEN);
+  }
+  if (f1 < 50 || f1 > 600000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad flush_valve_ms", HTTPD_RESP_USE_STRLEN);
+  }
+  if (f2 < 50 || f2 > 600000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad flush_all_ms", HTTPD_RESP_USE_STRLEN);
+  }
+  if (dry_ms < 200 || dry_ms > 600000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad dry_run_timeout_ms", HTTPD_RESP_USE_STRLEN);
+  }
+  if (dry_min < 0 || dry_min > 100000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad dry_run_min_ticks", HTTPD_RESP_USE_STRLEN);
+  }
+
+  const esp_err_t err = config_save_pump_settings(steps, enc, f1, f2);
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  // Сохраняем dry-run в те же NVS-ключи (внутри config_load_* они уже читаются).
+  // Здесь пишем напрямую через NVS handle, чтобы не плодить отдельный API.
+  if (config) {
+    (void)config->set_item("dry_run_timeout_ms", dry_ms);
+    (void)config->set_item("dry_run_min_ticks", dry_min);
+    (void)config->commit();
+    // Обновим кэш, чтобы GET /api/config сразу отдал актуальные значения
+    (void)config_load_pump_settings(nullptr, nullptr, nullptr, nullptr);
+  }
+
+  // Применяем в рантайме для экрана/логики
+  app_config.steps = (uint32_t)steps;
+  app_config.encoder = enc;
+  app_state.encoder = enc;
+  app_state.previous_target = steps + enc;
+  app_state.water_target = steps + enc;
+
+  return api_config_get_handler(req);
 }
 
 static esp_err_t api_ioexp_get_handler(httpd_req_t *req) {
@@ -385,7 +621,12 @@ static esp_err_t api_ota_post_handler(httpd_req_t *req) {
   int total = 0;
 
   while (remaining > 0) {
-    const int recv = httpd_req_recv(req, buf, (remaining > (int)sizeof(buf)) ? (int)sizeof(buf) : remaining);
+    const int to_read = (remaining > (int)sizeof(buf)) ? (int)sizeof(buf) : remaining;
+    const int recv = httpd_req_recv(req, buf, to_read);
+    if (recv == HTTPD_SOCK_ERR_TIMEOUT) {
+      // просто ждём дальше
+      continue;
+    }
     if (recv <= 0) {
       esp_ota_abort(ota_handle);
       s_ota_in_progress = false;
@@ -428,6 +669,77 @@ static esp_err_t api_ota_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+static esp_err_t api_ota_storage_post_handler(httpd_req_t *req) {
+  // Принимаем storage.bin (SPIFFS image) и перезаписываем партицию "storage", затем reboot.
+  // Важно: SPIFFS должен быть размонтирован перед записью.
+
+  if (s_ota_in_progress) {
+    httpd_resp_set_status(req, "409 Conflict");
+    return httpd_resp_send(req, "OTA already in progress", HTTPD_RESP_USE_STRLEN);
+  }
+  s_ota_in_progress = true;
+
+  const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                                         spiffs_fs_partition_label());
+  if (!part) {
+    s_ota_in_progress = false;
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "storage partition not found", HTTPD_RESP_USE_STRLEN);
+  }
+
+  if (req->content_len <= 0 || (size_t)req->content_len > part->size) {
+    s_ota_in_progress = false;
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad content length", HTTPD_RESP_USE_STRLEN);
+  }
+
+  // Размонтируем SPIFFS, иначе запись поверх смонтированной FS опасна
+  (void)spiffs_fs_unmount();
+
+  ESP_LOGW(TAG, "OTA storage start: writing %d bytes -> partition %s at 0x%" PRIx32 " size=%" PRIu32,
+           req->content_len, part->label, part->address, (uint32_t)part->size);
+
+  // Erase partition полностью (чтобы точно очистить хвост)
+  esp_err_t err = esp_partition_erase_range(part, 0, part->size);
+  if (err != ESP_OK) {
+    s_ota_in_progress = false;
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "erase failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char buf[1024];
+  int remaining = req->content_len;
+  size_t offset = 0;
+  while (remaining > 0) {
+    const int to_read = (remaining > (int)sizeof(buf)) ? (int)sizeof(buf) : remaining;
+    const int recv = httpd_req_recv(req, buf, to_read);
+    if (recv == HTTPD_SOCK_ERR_TIMEOUT) {
+      continue;
+    }
+    if (recv <= 0) {
+      s_ota_in_progress = false;
+      httpd_resp_set_status(req, "400 Bad Request");
+      return httpd_resp_send(req, "recv failed", HTTPD_RESP_USE_STRLEN);
+    }
+    err = esp_partition_write(part, offset, buf, (size_t)recv);
+    if (err != ESP_OK) {
+      s_ota_in_progress = false;
+      httpd_resp_set_status(req, "500 Internal Server Error");
+      return httpd_resp_send(req, "write failed", HTTPD_RESP_USE_STRLEN);
+    }
+    offset += (size_t)recv;
+    remaining -= recv;
+  }
+
+  httpd_resp_set_type(req, "text/plain; charset=utf-8");
+  httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+
+  ESP_LOGW(TAG, "OTA storage done: %u bytes -> rebooting...", (unsigned)offset);
+  vTaskDelay(pdMS_TO_TICKS(500));
+  esp_restart();
+  return ESP_OK;
+}
+
 static esp_err_t wildcard_get_handler(httpd_req_t *req) {
   return send_file_from_spiffs(req, nullptr);
 }
@@ -442,6 +754,12 @@ esp_err_t web_server_start(void) {
   config.ctrl_port = 32768;
   config.uri_match_fn = httpd_uri_match_wildcard;
   config.lru_purge_enable = true;
+  // OTA иногда идёт медленно по Wi‑Fi; увеличим таймауты приёма/отправки, чтобы не рвать соединение.
+  config.recv_wait_timeout = 20;
+  config.send_wait_timeout = 20;
+  // У нас много эндпоинтов (/info.json, /api/*, /*). Дефолтного лимита не хватает,
+  // из-за чего wildcard не регистрируется и даже "/" начинает отдавать 404.
+  config.max_uri_handlers = 24;
 
   esp_err_t err = httpd_start(&s_server, &config);
   if (err != ESP_OK) {
@@ -457,6 +775,13 @@ esp_err_t web_server_start(void) {
   info.handler = info_json_get_handler;
   httpd_register_uri_handler(s_server, &info);
 
+  // /status (alias)
+  httpd_uri_t status_json = {};
+  status_json.uri = "/status";
+  status_json.method = HTTP_GET;
+  status_json.handler = status_json_get_handler;
+  httpd_register_uri_handler(s_server, &status_json);
+
   // /api/status
   httpd_uri_t status = {};
   status.uri = "/api/status";
@@ -464,12 +789,45 @@ esp_err_t web_server_start(void) {
   status.handler = api_status_get_handler;
   httpd_register_uri_handler(s_server, &status);
 
+  // /api/stats
+  httpd_uri_t stats = {};
+  stats.uri = "/api/stats";
+  stats.method = HTTP_GET;
+  stats.handler = api_stats_get_handler;
+  httpd_register_uri_handler(s_server, &stats);
+
+  httpd_uri_t stats_set = {};
+  stats_set.uri = "/api/stats";
+  stats_set.method = HTTP_POST;
+  stats_set.handler = api_stats_post_handler;
+  httpd_register_uri_handler(s_server, &stats_set);
+
   // /api/toggle
   httpd_uri_t toggle = {};
   toggle.uri = "/api/toggle";
   toggle.method = HTTP_POST;
   toggle.handler = api_toggle_post_handler;
   httpd_register_uri_handler(s_server, &toggle);
+
+  // /api/i2c
+  httpd_uri_t i2c = {};
+  i2c.uri = "/api/i2c";
+  i2c.method = HTTP_GET;
+  i2c.handler = api_i2c_get_handler;
+  httpd_register_uri_handler(s_server, &i2c);
+
+  // /api/config
+  httpd_uri_t cfg_get = {};
+  cfg_get.uri = "/api/config";
+  cfg_get.method = HTTP_GET;
+  cfg_get.handler = api_config_get_handler;
+  httpd_register_uri_handler(s_server, &cfg_get);
+
+  httpd_uri_t cfg_set = {};
+  cfg_set.uri = "/api/config";
+  cfg_set.method = HTTP_POST;
+  cfg_set.handler = api_config_post_handler;
+  httpd_register_uri_handler(s_server, &cfg_set);
 
   // /api/ioexp
   httpd_uri_t ioexp = {};
@@ -498,6 +856,13 @@ esp_err_t web_server_start(void) {
   ota.method = HTTP_POST;
   ota.handler = api_ota_post_handler;
   httpd_register_uri_handler(s_server, &ota);
+
+  // /api/ota/storage (SPIFFS image)
+  httpd_uri_t ota_storage = {};
+  ota_storage.uri = "/api/ota/storage";
+  ota_storage.method = HTTP_POST;
+  ota_storage.handler = api_ota_storage_post_handler;
+  httpd_register_uri_handler(s_server, &ota_storage);
 
   // статика из SPIFFS
   httpd_uri_t files = {};

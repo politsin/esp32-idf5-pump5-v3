@@ -3,3 +3,4 @@ components/components/*
 dependencies.lock
 managed_components
 patches/
+tools/.ota_last_ip

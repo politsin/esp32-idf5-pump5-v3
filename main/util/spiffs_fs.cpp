@@ -39,4 +39,17 @@ esp_err_t spiffs_fs_mount(void) {
   return ESP_OK;
 }
 
+esp_err_t spiffs_fs_unmount(void) {
+  if (!s_mounted) return ESP_OK;
+  esp_err_t err = esp_vfs_spiffs_unregister(spiffs_fs_partition_label());
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "esp_vfs_spiffs_unregister failed: %s", esp_err_to_name(err));
+    // даже если не получилось — считаем, что лучше попытаться дальше (перезапись всё равно опасна)
+    return err;
+  }
+  s_mounted = false;
+  ESP_LOGI(TAG, "SPIFFS unmounted");
+  return ESP_OK;
+}
+
 

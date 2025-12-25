@@ -1,3 +1,7 @@
+# Для IDF5+ i2cdev работает через новый i2c_master. На платах без внешних подтяжек
+# (или при сомнительном контакте) полезно авто-включение внутренних pull-up.
+# Это НЕ панацея, но помогает диагностике и часто убирает "bus floating" и NACK.
+CONFIG_I2CDEV_AUTO_ENABLE_PULLUPS=y
 CONFIG_LILYGO_T_DISPLAY=y
 CONFIG_LV_USE_USER_DATA=y
 CONFIG_LV_COLOR_16_SWAP=y

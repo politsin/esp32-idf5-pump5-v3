@@ -152,6 +152,15 @@
       "dependsOn": "Flash - Flash the device"
     },
     {
+      "label": "OTA Flash",
+      "type": "shell",
+      "windows": {
+        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\\\tools\\\\ota_upload.ps1\" -Ip \"${config:pump.ota.ip}\" -Bin \"${config:pump.ota.bin}\""
+      },
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/tools/ota_upload.ps1\" -Ip \"${config:pump.ota.ip}\" -Bin \"${config:pump.ota.bin}\"",
+      "problemMatcher": []
+    },
+    {
       "label": "OpenOCD: Start openOCD",
       "type": "shell",
       "presentation": {
@@ -235,39 +244,6 @@
           }
         }
       }
-    },
-    {
-      "label": "OTA: Upload (web)",
-      "type": "shell",
-      "command": "curl -f -X POST -H \"Content-Type: application/octet-stream\" --data-binary @${config:pump.ota.bin} http://${config:pump.ota.ip}/api/ota",
-      "windows": {
-        "command": "pwsh",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          "${workspaceFolder}/tools/ota_upload.ps1",
-          "-Ip",
-          "${config:pump.ota.ip}",
-          "-Bin",
-          "${config:pump.ota.bin}",
-          "-TimeoutSec",
-          "180"
-        ]
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "OTA: Build + Upload (web)",
-      "dependsOn": [
-        "Build - Build project",
-        "OTA: Upload (web)"
-      ],
-      "dependsOrder": "sequence",
-      "type": "shell",
-      "command": "echo OTA build+upload done",
-      "problemMatcher": []
     }
   ]
 }

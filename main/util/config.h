@@ -14,6 +14,23 @@ esp_err_t save_total_banks_count(int32_t total_banks);
 esp_err_t save_today_banks_count(int32_t today_banks);
 esp_err_t load_today_banks_count(int32_t* today_banks);
 esp_err_t check_and_reset_daily_counter();
+
+// Настройки уставок (NVS):
+// - steps: цель налива в тиках (база)
+// - encoder: смещение в тиках (добавляется к steps)
+// - flush_valve_ms: длительность открытия одного клапана при FLUSH (мс)
+// - flush_all_ms: длительность открытия всех клапанов при FLUSH (мс)
+//
+// config_init() загружает значения в кэш. Для доступа используйте config_get_cached_pump_settings().
+esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
+esp_err_t config_save_pump_settings(int32_t steps, int32_t encoder, int32_t flush_valve_ms, int32_t flush_all_ms);
+void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
+
+// Защита от "сухого хода": помпа работает, но счётчик почти не растёт.
+// - dry_run_timeout_ms: окно времени для проверки (мс)
+// - dry_run_min_ticks: минимальный прирост тиков за это окно
+void config_get_cached_dry_run(int32_t *dry_run_timeout_ms, int32_t *dry_run_min_ticks);
+
 extern std::shared_ptr<nvs::NVSHandle> config;
 
 #endif /* IOT_CONFIG_H_ */
