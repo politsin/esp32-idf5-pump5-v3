@@ -39,6 +39,16 @@ esp_err_t ioexp_toggle_pump(void);
 esp_err_t ioexp_toggle_valve(int valve_index_1_based);
 esp_err_t ioexp_get_shadow(uint16_t *out_shadow); // сырое 16-бит состояние портов (shadow)
 
+// Сырой доступ к портам PCF8575:
+// - port_read возвращает РЕАЛЬНОЕ текущее состояние ножек (по I2C), чтобы веб мог
+//   отражать нажатия кнопок и изменения "снаружи".
+// - set/toggle работают по shadow и пишут весь 16-битный порт.
+//   Для PCF8575: запись '1' = отпустить/подтянуть вверх (квази-вход/высокий),
+//                запись '0' = активно тянуть вниз.
+esp_err_t ioexp_port_read(uint16_t *out_port_val);
+esp_err_t ioexp_set_bit_raw(int bit_index_0_15, bool high_level);
+esp_err_t ioexp_toggle_bit_raw(int bit_index_0_15);
+
 // Прочитать состояния кнопок; pressed=true если на входе низкий уровень
 esp_err_t ioexp_read_buttons(bool* stop_pressed, bool* flush_pressed, bool* run_pressed);
 

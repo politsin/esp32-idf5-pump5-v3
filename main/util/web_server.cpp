@@ -189,6 +189,92 @@ static esp_err_t api_status_get_handler(httpd_req_t *req) {
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t api_ioexp_get_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+
+  if (!ioexp_is_initialized()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    return httpd_resp_send(req, "{\"ok\":0,\"err\":\"ioexp not initialized\"}", HTTPD_RESP_USE_STRLEN);
+  }
+
+  uint16_t shadow = 0;
+  uint16_t port = 0;
+  esp_err_t err = ioexp_get_shadow(&shadow);
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "{\"ok\":0,\"err\":\"get_shadow failed\"}", HTTPD_RESP_USE_STRLEN);
+  }
+  err = ioexp_port_read(&port);
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "{\"ok\":0,\"err\":\"port_read failed\"}", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char body[128];
+  const int n = snprintf(body, sizeof(body),
+                         "{"
+                         "\"ok\":1,"
+                         "\"shadow\":\"0x%04x\","
+                         "\"port\":\"0x%04x\","
+                         "\"shadow_u\":%u,"
+                         "\"port_u\":%u"
+                         "}",
+                         (unsigned)shadow, (unsigned)port, (unsigned)shadow, (unsigned)port);
+  if (n <= 0) return httpd_resp_send_500(req);
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_ioexp_set_post_handler(httpd_req_t *req) {
+  if (!ioexp_is_initialized()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    return httpd_resp_send(req, "ioexp not initialized", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char query[160];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "missing query", HTTPD_RESP_USE_STRLEN);
+  }
+
+  char bit_s[8];
+  if (httpd_query_key_value(query, "bit", bit_s, sizeof(bit_s)) != ESP_OK) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "missing bit", HTTPD_RESP_USE_STRLEN);
+  }
+  const int bit = (int)strtol(bit_s, nullptr, 10);
+  if (bit < 0 || bit > 15) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bit out of range (0..15)", HTTPD_RESP_USE_STRLEN);
+  }
+
+  esp_err_t err = ESP_OK;
+
+  char toggle_s[8];
+  if (httpd_query_key_value(query, "toggle", toggle_s, sizeof(toggle_s)) == ESP_OK) {
+    const int t = (int)strtol(toggle_s, nullptr, 10);
+    if (t != 0) err = ioexp_toggle_bit_raw(bit);
+  } else {
+    char val_s[8];
+    if (httpd_query_key_value(query, "val", val_s, sizeof(val_s)) != ESP_OK) {
+      httpd_resp_set_status(req, "400 Bad Request");
+      return httpd_resp_send(req, "missing val or toggle", HTTPD_RESP_USE_STRLEN);
+    }
+    const int v = (int)strtol(val_s, nullptr, 10);
+    if (v != 0 && v != 1) {
+      httpd_resp_set_status(req, "400 Bad Request");
+      return httpd_resp_send(req, "val must be 0 or 1", HTTPD_RESP_USE_STRLEN);
+    }
+    err = ioexp_set_bit_raw(bit, v ? true : false);
+  }
+
+  if (err != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "ioexp set failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  return api_ioexp_get_handler(req);
+}
+
 static esp_err_t api_toggle_post_handler(httpd_req_t *req) {
   if (!ioexp_is_initialized()) {
     httpd_resp_set_status(req, "503 Service Unavailable");
@@ -384,6 +470,20 @@ esp_err_t web_server_start(void) {
   toggle.method = HTTP_POST;
   toggle.handler = api_toggle_post_handler;
   httpd_register_uri_handler(s_server, &toggle);
+
+  // /api/ioexp
+  httpd_uri_t ioexp = {};
+  ioexp.uri = "/api/ioexp";
+  ioexp.method = HTTP_GET;
+  ioexp.handler = api_ioexp_get_handler;
+  httpd_register_uri_handler(s_server, &ioexp);
+
+  // /api/ioexp/set
+  httpd_uri_t ioexp_set = {};
+  ioexp_set.uri = "/api/ioexp/set";
+  ioexp_set.method = HTTP_POST;
+  ioexp_set.handler = api_ioexp_set_post_handler;
+  httpd_register_uri_handler(s_server, &ioexp_set);
 
   // /api/log
   httpd_uri_t logu = {};

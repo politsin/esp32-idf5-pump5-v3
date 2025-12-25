@@ -1,0 +1,18 @@
+CompileFlags:
+  # compile_commands.json генерируется под xtensa-g++ и содержит gcc-флаги,
+  # которые esp-clang/clangd не понимает. Убираем их, чтобы не было ложных ошибок.
+  Remove:
+    - -fno-shrink-wrap
+    - -fstrict-volatile-bitfields
+    - -fno-tree-switch-conversion
+
+  # Заголовки libc/newlib лежат в toolchain и добавляются gcc "неявно".
+  # Для clangd добавим их явно, иначе будут ошибки вида "stdio.h: No such file".
+  Add:
+    - --target=xtensa-esp32-elf
+    - -isystem
+    - C:/Espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include
+    - -isystem
+    - C:/Espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/include
+
+

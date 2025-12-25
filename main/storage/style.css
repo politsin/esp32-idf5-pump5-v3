@@ -31,4 +31,30 @@ details.card > :not(summary){padding:0 14px 14px 14px;}
 .headrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
 .btn-small{padding:6px 10px;border-radius:10px;font-size:12px;}
 
+.ioexp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;}
+
+.ioexp-grid{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+}
+@media (max-width: 760px){.ioexp-grid{grid-template-columns:1fr;}}
+
+.ioexp-col{border:1px solid #eee;border-radius:12px;padding:10px;background:#fafafa;}
+.ioexp-col h3{margin:0 0 8px 0;font-size:14px;color:#333;}
+.ioexp-row{display:grid;grid-template-columns: 70px 1fr 64px;gap:10px;align-items:center;margin:8px 0;}
+.ioexp-pin{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#333;}
+.ioexp-state{
+  border:1px solid #ddd;border-radius:10px;padding:8px 10px;
+  font-family:ui-monospace,Consolas,monospace;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:#fff;
+}
+.ioexp-state.high{border-color:#19c37d;background:#f2fbf6;}
+.ioexp-state.low{border-color:#d9534f;background:#fff5f5;}
+.ioexp-bit{color:#666;}
+.btn-ghost{padding:6px 10px;border-radius:10px;border:1px solid #333;background:#fff;color:#111;}
+.btn-ghost:active{transform:translateY(1px);}
+
 

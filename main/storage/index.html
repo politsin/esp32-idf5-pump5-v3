@@ -58,6 +58,19 @@
     </div>
 
     <section class="card">
+      <h2>PCF8575 — все пины (00..07 и 17..10)</h2>
+      <div class="muted">
+        Значение в вебе — это <b>реально прочитанный</b> порт PCF8575. Управление: запись <b>0</b> тянет линию вниз (LOW),
+        запись <b>1</b> отпускает/подтягивает вверх (HIGH, квази-вход). Нажатия кнопок на устройстве будут видны тут.
+      </div>
+      <div class="ioexp-head">
+        <div class="muted" id="ioexp-meta">—</div>
+        <button class="btn btn-small" id="btn-ioexp-refresh">Обновить</button>
+      </div>
+      <div id="ioexp-grid" class="ioexp-grid"></div>
+    </section>
+
+    <section class="card">
       <div class="headrow">
         <h2 style="margin: 0">Журнал</h2>
         <button class="btn btn-small" id="btn-log-toggle">Включить</button>

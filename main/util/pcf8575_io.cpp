@@ -13,17 +13,51 @@ static const char* TAG_IOEXP = "IOEXP";
 
 // Соответствие битов портов PCF8575
 // Нижний байт = P0..P7, верхний байт = P8..P15
-// Клапаны: P10..P13
-static constexpr int VALVE1_BIT = 10; // P10
-static constexpr int VALVE2_BIT = 11; // P11
-static constexpr int VALVE3_BIT = 12; // P12
-static constexpr int VALVE4_BIT = 13; // P13
+//
+// Важно про обозначения:
+// - В даташите/коде часто используют P0..P15 (бит == номер).
+// - На платах часто маркируют как P10..P17 (это верхний байт): P10=бит8 ... P17=бит15.
+//
+// По умолчанию используем:
+// - "насосы" на P12..P15  => биты 10..13
+// - помпа на P17          => бит 15
+//
+// Если у вас на железе иначе (например, помпа на P16=бит14 или активный уровень другой),
+// можно переопределить макросы IOEXP_* ниже через compile definitions.
+#ifndef IOEXP_VALVE1_BIT
+#define IOEXP_VALVE1_BIT 10  // P12 (в нотации P10..P17) / бит10 (в нотации P0..P15)
+#endif
+#ifndef IOEXP_VALVE2_BIT
+#define IOEXP_VALVE2_BIT 11  // P13 / бит11
+#endif
+#ifndef IOEXP_VALVE3_BIT
+#define IOEXP_VALVE3_BIT 12  // P14 / бит12
+#endif
+#ifndef IOEXP_VALVE4_BIT
+#define IOEXP_VALVE4_BIT 13  // P15 / бит13
+#endif
+#ifndef IOEXP_PUMP_BIT
+#define IOEXP_PUMP_BIT 15    // P17 / бит15
+#endif
+
+// Полярность выходов (по умолчанию active-low как было в коде)
+#ifndef IOEXP_VALVES_ACTIVE_LOW
+#define IOEXP_VALVES_ACTIVE_LOW 1
+#endif
+#ifndef IOEXP_PUMP_ACTIVE_LOW
+#define IOEXP_PUMP_ACTIVE_LOW 1
+#endif
+
+static constexpr int VALVE1_BIT = IOEXP_VALVE1_BIT;
+static constexpr int VALVE2_BIT = IOEXP_VALVE2_BIT;
+static constexpr int VALVE3_BIT = IOEXP_VALVE3_BIT;
+static constexpr int VALVE4_BIT = IOEXP_VALVE4_BIT;
 // Кнопки: P1..P3 (активный низ)
 static constexpr int BTN_STOP_BIT  = 1;  // P1
 static constexpr int BTN_FLUSH_BIT = 2;  // P2
 static constexpr int BTN_RUN_BIT   = 3;  // P3
-// Помпа: P15
-static constexpr int PUMP_BIT = 15; // P15
+// Помпа: P17 (в нотации P10..P17) / бит15 (в нотации P0..P15)
+static constexpr int PUMP_BIT = IOEXP_PUMP_BIT;
 
 static i2c_dev_t pcf_dev{};
 static uint16_t port_shadow = 0xFFFF; // 1 = подтяжка/вход; 0 = выводим '0'
@@ -38,6 +72,48 @@ static esp_err_t write_bit_and_flush(int bit_index, bool high_level)
     else
         port_shadow &= (uint16_t)~mask;
     return pcf8575_port_write(&pcf_dev, port_shadow);
+}
+
+esp_err_t ioexp_port_read(uint16_t *out_port_val)
+{
+    if (!out_port_val) return ESP_ERR_INVALID_ARG;
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    uint16_t val = 0xFFFF;
+    esp_err_t r = pcf8575_port_read(&pcf_dev, &val);
+    if (r != ESP_OK) return r;
+    *out_port_val = val;
+    return ESP_OK;
+}
+
+esp_err_t ioexp_set_bit_raw(int bit_index_0_15, bool high_level)
+{
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    if (bit_index_0_15 < 0 || bit_index_0_15 > 15) return ESP_ERR_INVALID_ARG;
+    return write_bit_and_flush(bit_index_0_15, high_level);
+}
+
+esp_err_t ioexp_toggle_bit_raw(int bit_index_0_15)
+{
+    if (!initialized) return ESP_ERR_INVALID_STATE;
+    if (bit_index_0_15 < 0 || bit_index_0_15 > 15) return ESP_ERR_INVALID_ARG;
+
+    const uint16_t mask = (uint16_t)(1u << bit_index_0_15);
+    const bool cur_high = ((port_shadow & mask) != 0);
+    return write_bit_and_flush(bit_index_0_15, !cur_high);
+}
+
+static inline bool shadow_bit_is_on(uint16_t shadow, int bit_index, bool active_low)
+{
+    const bool bit_is_1 = (((shadow >> bit_index) & 0x1) != 0);
+    return active_low ? (!bit_is_1) : (bit_is_1);
+}
+
+static inline bool to_hw_level_for_on(bool on, bool active_low)
+{
+    // Возвращает уровень, который нужно записать в "shadow" (1 или 0), чтобы получилось on/off.
+    // active-low: on -> 0, off -> 1
+    // active-high: on -> 1, off -> 0
+    return active_low ? (!on) : (on);
 }
 
 esp_err_t ioexp_init(void)
@@ -60,7 +136,7 @@ esp_err_t ioexp_init(void)
 
     // Начальное состояние (активный низ для выходов):
     // - Кнопки (P1..P3) держим '1' для чтения
-    // - Выходы (P10..P13 клапаны, P15 помпа) выключены '1' (OFF)
+    // - Выходы (клапаны/помпа) выключены
     {
         const uint16_t outputs_mask =
             (1u << VALVE1_BIT) |
@@ -68,8 +144,20 @@ esp_err_t ioexp_init(void)
             (1u << VALVE3_BIT) |
             (1u << VALVE4_BIT) |
             (1u << PUMP_BIT);
+        // Базово все входы/линии в 1 (квази-бидир.) — дальше выставим "OFF" для выходов в зависимости от полярности.
         port_shadow = 0xFFFF;
-        port_shadow |= outputs_mask; // выходы = 1 (OFF), входы остаются 1
+        if (IOEXP_VALVES_ACTIVE_LOW) {
+            port_shadow |= (uint16_t)((1u << VALVE1_BIT) | (1u << VALVE2_BIT) | (1u << VALVE3_BIT) | (1u << VALVE4_BIT));
+        } else {
+            port_shadow &= (uint16_t)~((1u << VALVE1_BIT) | (1u << VALVE2_BIT) | (1u << VALVE3_BIT) | (1u << VALVE4_BIT));
+        }
+        if (IOEXP_PUMP_ACTIVE_LOW) {
+            port_shadow |= (uint16_t)(1u << PUMP_BIT);
+        } else {
+            port_shadow &= (uint16_t)~((uint16_t)(1u << PUMP_BIT));
+        }
+        // outputs_mask оставим для ясности: эти биты считаем "выходами", остальное — входы/кнопки
+        (void)outputs_mask;
         esp_err_t r = pcf8575_port_write(&pcf_dev, port_shadow);
         if (r != ESP_OK) {
             ESP_LOGE(TAG_IOEXP, "PCF8575 write failed at 0x%02X (check wiring/address). err=0x%x", PCF8575_ADDR, r);
@@ -91,14 +179,9 @@ esp_err_t ioexp_get_shadow(uint16_t *out_shadow) {
     return ESP_OK;
 }
 
-static inline bool is_bit_on_active_low(uint16_t shadow, int bit_index) {
-    // active-low: 0 = ON, 1 = OFF
-    return (((shadow >> bit_index) & 0x1) == 0);
-}
-
 bool ioexp_get_pump(void) {
     if (!initialized) return false;
-    return is_bit_on_active_low(port_shadow, PUMP_BIT);
+    return shadow_bit_is_on(port_shadow, PUMP_BIT, IOEXP_PUMP_ACTIVE_LOW);
 }
 
 bool ioexp_get_valve(int valve_index_1_based) {
@@ -111,7 +194,7 @@ bool ioexp_get_valve(int valve_index_1_based) {
         case 4: bit = VALVE4_BIT; break;
         default: return false;
     }
-    return is_bit_on_active_low(port_shadow, bit);
+    return shadow_bit_is_on(port_shadow, bit, IOEXP_VALVES_ACTIVE_LOW);
 }
 
 esp_err_t ioexp_toggle_pump(void) {
@@ -129,8 +212,13 @@ esp_err_t ioexp_set_pump(bool level)
     if (!initialized) {
         return ESP_ERR_INVALID_STATE;
     }
-    // Активный низ: true -> 0, false -> 1
-    return write_bit_and_flush(PUMP_BIT, !level);
+    const bool hw_level = to_hw_level_for_on(level, IOEXP_PUMP_ACTIVE_LOW);
+    esp_err_t r = write_bit_and_flush(PUMP_BIT, hw_level);
+    if (r != ESP_OK) {
+        ESP_LOGW(TAG_IOEXP, "PCF8575 pump write failed (bit=%d active_low=%d on=%d). err=0x%x",
+                 PUMP_BIT, (int)IOEXP_PUMP_ACTIVE_LOW, (int)level, (unsigned)r);
+    }
+    return r;
 }
 
 esp_err_t ioexp_set_valve(int valve_index_1_based, bool level)
@@ -146,8 +234,13 @@ esp_err_t ioexp_set_valve(int valve_index_1_based, bool level)
         case 4: bit = VALVE4_BIT; break;
         default: return ESP_ERR_INVALID_ARG;
     }
-    // Активный низ: true -> 0, false -> 1
-    return write_bit_and_flush(bit, !level);
+    const bool hw_level = to_hw_level_for_on(level, IOEXP_VALVES_ACTIVE_LOW);
+    esp_err_t r = write_bit_and_flush(bit, hw_level);
+    if (r != ESP_OK) {
+        ESP_LOGW(TAG_IOEXP, "PCF8575 valve write failed (bit=%d active_low=%d on=%d). err=0x%x",
+                 bit, (int)IOEXP_VALVES_ACTIVE_LOW, (int)level, (unsigned)r);
+    }
+    return r;
 }
 
 esp_err_t ioexp_set_all_valves(bool level)
@@ -160,11 +253,17 @@ esp_err_t ioexp_set_all_valves(bool level)
         (1u << VALVE2_BIT) |
         (1u << VALVE3_BIT) |
         (1u << VALVE4_BIT);
-    // Активный низ
-    if (level) // включить все
-        port_shadow &= (uint16_t)~mask; // 0 = ON
-    else       // выключить все
-        port_shadow |= mask;            // 1 = OFF
+    if (IOEXP_VALVES_ACTIVE_LOW) {
+        if (level) // включить все
+            port_shadow &= (uint16_t)~mask; // 0 = ON
+        else       // выключить все
+            port_shadow |= mask;            // 1 = OFF
+    } else {
+        if (level) // включить все
+            port_shadow |= mask;            // 1 = ON
+        else
+            port_shadow &= (uint16_t)~mask; // 0 = OFF
+    }
     return pcf8575_port_write(&pcf_dev, port_shadow);
 }
 
