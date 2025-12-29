@@ -31,6 +31,12 @@ void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *
 // - dry_run_min_ticks: минимальный прирост тиков за это окно
 void config_get_cached_dry_run(int32_t *dry_run_timeout_ms, int32_t *dry_run_min_ticks);
 
+// Настройки счётчика тиков (DI):
+// - tick_source: 0 = PCNT (аппаратный счётчик), 1 = GPIO ISR + debounce
+// - tick_min_interval_us: минимальный интервал между импульсами (мкс) для debounce (только для GPIO ISR)
+// - tick_pull: 0 = OFF, 1 = PULL-UP, 2 = PULL-DOWN
+void config_get_cached_tick_counter(int32_t *tick_source, int32_t *tick_min_interval_us, int32_t *tick_pull);
+
 extern std::shared_ptr<nvs::NVSHandle> config;
 
 #endif /* IOT_CONFIG_H_ */

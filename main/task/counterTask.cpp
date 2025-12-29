@@ -1,11 +1,14 @@
 // #include <counterTask.h> WTF o.O
 // Counter #22 #19.
+#include "counterTask.h"
 #include "driver/gpio.h"
 #include "driver/pulse_cnt.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include "esp_cpu.h"
+#include "esp_rom_sys.h"
 typedef gpio_num_t Pintype;
-static constexpr Pintype DI = GPIO_NUM_26;
+static constexpr Pintype DI = COUNTER_TICK_GPIO;
 static constexpr Pintype PUMP = GPIO_NUM_25;
 // Клапаны перенесены на PCF8575 (P0..P4), GPIO больше не используются
 #include "sdkconfig.h"
@@ -94,6 +97,26 @@ static volatile int pending_open_valve = 0;
 static volatile bool valve_switch_pending = false;
 static volatile int32_t last_logged_rot = -1;     // для "в лоб" логирования тиков
 static volatile int32_t gpio_ticks_pending = 0;   // тики, накопленные GPIO ISR
+static portMUX_TYPE s_gpio_ticks_mux = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t s_tick_min_cycles = 0;   // debounce в тактах CPU (0 = выключен)
+static volatile uint32_t s_tick_last_cycle = 0;   // последний принятый тик (cycle_count)
+
+static void IRAM_ATTR counter_gpio_isr(void* arg) {
+  (void)arg;
+  portENTER_CRITICAL_ISR(&s_gpio_ticks_mux);
+  // Дребезг/шум: отсекаем импульсы чаще, чем tick_min_interval_us (если задан)
+  if (s_tick_min_cycles != 0) {
+    const uint32_t now = esp_cpu_get_cycle_count();
+    const uint32_t dt = (uint32_t)(now - s_tick_last_cycle);
+    if (dt < s_tick_min_cycles) {
+      portEXIT_CRITICAL_ISR(&s_gpio_ticks_mux);
+      return;
+    }
+    s_tick_last_cycle = now;
+  }
+  gpio_ticks_pending = gpio_ticks_pending + 1;
+  portEXIT_CRITICAL_ISR(&s_gpio_ticks_mux);
+}
 #ifndef VALVE_SWITCH_BIT
 #define VALVE_SWITCH_BIT (1UL << 29)
 #endif
@@ -143,73 +166,102 @@ void counterTask(void *pvParam) {
   // Все клапаны выключены через PCF8575
   ioexp_set_all_valves(false);
 
-  // Настраиваем вход DI: счётчик импульсов через PCNT (новый драйвер) с аппаратным антидребезгом
-  gpio_pad_select_gpio(DI);
-  gpio_set_direction(DI, GPIO_MODE_INPUT);
-  gpio_pullup_en(DI);
-  gpio_pulldown_dis(DI);
-  gpio_set_intr_type(DI, GPIO_INTR_DISABLE);
-  // Создаём юнит PCNT
+  // Настройки счётчика тиков (DI) из NVS (кэш)
+  int32_t tick_source = 1; // 0=PCNT, 1=GPIO ISR + debounce
+  int32_t tick_min_us = 0;
+  int32_t tick_pull = 0; // 0=OFF, 1=UP, 2=DOWN
+  config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
+
+  // Настройка debounce для GPIO ISR: переводим микросекунды в такты CPU (делаем это НЕ в ISR).
+  // tick_min_interval_us = 0 -> debounce выключен.
+  if (tick_min_us < 0) tick_min_us = 0;
+  if (tick_min_us > 500000) tick_min_us = 500000;
+  const uint32_t cycles_per_us = (uint32_t)esp_rom_get_cpu_ticks_per_us();
+  portENTER_CRITICAL(&s_gpio_ticks_mux);
+  s_tick_min_cycles = (tick_min_us > 0 && cycles_per_us > 0) ? ((uint32_t)tick_min_us * cycles_per_us) : 0U;
+  s_tick_last_cycle = 0;
+  portEXIT_CRITICAL(&s_gpio_ticks_mux);
+
+  // Настраиваем вход DI.
+  // Для датчиков расхода (Hall) часто нужен pull-up, но он может усиливать наводки на длинных проводах.
+  // Поэтому делаем это настраиваемым через NVS/web: tick_pull (0/1/2).
+  gpio_config_t di_config = {
+      .pin_bit_mask = (1ULL << DI),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = (tick_pull == 1) ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+      .pull_down_en = (tick_pull == 2) ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE
+  };
+  gpio_config(&di_config);
+
+  // Создаём юнит PCNT (если выбран PCNT)
   static pcnt_unit_handle_t pcnt_unit = NULL;
   static pcnt_channel_handle_t pcnt_chan = NULL;
-  bool pcnt_ready = true;
-  pcnt_unit_config_t unit_cfg = {
-      .low_limit = -32768,
-      .high_limit = 32767,
-      .intr_priority = 0,
-      .flags = {}
-  };
-  if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
-    pcnt_ready = false;
-  }
-  // Минимальный антидребезг для PCNT: 1 мкс (высокая скорость счёта)
-  pcnt_glitch_filter_config_t filter_cfg = {
-      .max_glitch_ns = 1000, // ~1 мкс
-  };
-  if (pcnt_ready) {
-    esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
-    if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
+  bool pcnt_ready = false;
+  if (tick_source == 0) {
+    pcnt_ready = true;
+    pcnt_unit_config_t unit_cfg = {
+        .low_limit = -32768,
+        .high_limit = 32767,
+        .intr_priority = 0,
+        .flags = {}
+    };
+    if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
       pcnt_ready = false;
     }
+    // Антидребезг PCNT: увеличим до 10 мкс (часто помогает от наводок)
+    pcnt_glitch_filter_config_t filter_cfg = {
+        .max_glitch_ns = 10000, // 10 мкс
+    };
+    if (pcnt_ready) {
+      esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
+      if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
+        pcnt_ready = false;
+      }
+    }
+    // Канал: считаем по спадающему фронту (датчик тянет к GND)
+    pcnt_chan_config_t chan_cfg = {
+        .edge_gpio_num = DI,
+        .level_gpio_num = -1,
+        .flags = {}
+    };
+    if (pcnt_ready && pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan) != ESP_OK) {
+      pcnt_ready = false;
+    }
+    if (pcnt_ready && pcnt_channel_set_edge_action(
+          pcnt_chan,
+          PCNT_CHANNEL_EDGE_ACTION_HOLD,      // фронт вверх игнорируем
+          PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) { // считаем по фронту вниз
+      pcnt_ready = false;
+    }
+    if (pcnt_ready && pcnt_channel_set_level_action(
+          pcnt_chan,
+          PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+          PCNT_CHANNEL_LEVEL_ACTION_KEEP) != ESP_OK) {
+      pcnt_ready = false;
+    }
+    if (pcnt_ready) {
+      pcnt_unit_enable(pcnt_unit);
+      pcnt_unit_clear_count(pcnt_unit);
+      pcnt_unit_start(pcnt_unit);
+    }
   }
-  // Канал: считаем по спадающему фронту (датчик тянет к GND)
-  pcnt_chan_config_t chan_cfg = {
-      .edge_gpio_num = DI,
-      .level_gpio_num = -1,
-      .flags = {}
-  };
-  if (pcnt_ready && pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan) != ESP_OK) {
-    pcnt_ready = false;
-  }
-  if (pcnt_ready && pcnt_channel_set_edge_action(
-        pcnt_chan,
-        PCNT_CHANNEL_EDGE_ACTION_HOLD,      // фронт вверх игнорируем
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) { // считаем по фронту вниз
-    pcnt_ready = false;
-  }
-  if (pcnt_ready && pcnt_channel_set_level_action(
-        pcnt_chan,
-        PCNT_CHANNEL_LEVEL_ACTION_KEEP,
-        PCNT_CHANNEL_LEVEL_ACTION_KEEP) != ESP_OK) {
-    pcnt_ready = false;
-  }
-  if (pcnt_ready) {
-    pcnt_unit_enable(pcnt_unit);
-    pcnt_unit_clear_count(pcnt_unit);
-    pcnt_unit_start(pcnt_unit);
-  } else {
-    // PCNT не готов — включаем GPIO ISR фоллбэк по спаду
+
+  if (!pcnt_ready) {
+    // GPIO ISR (либо выбран вручную, либо PCNT не поднялся)
     esp_err_t isr_res = gpio_install_isr_service(0);
     if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
       // продолжаем, даже если сервис уже установлен
     }
+    // Считаем по спадающему фронту (датчик тянет к GND)
     gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
-    auto counter_gpio_isr = [](void* arg) IRAM_ATTR {
-      // volatile++ предупреждается как deprecated; используем явное сложение
-      gpio_ticks_pending = gpio_ticks_pending + 1;
-    };
+    (void)gpio_isr_handler_remove(DI);
     gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
     gpio_intr_enable(DI);
+    ESP_LOGW(COUNTER_TAG, "Ticks: source=GPIO_ISR (NEGEDGE) debounce_us=%ld",
+             (long)tick_min_us);
+  } else {
+    ESP_LOGW(COUNTER_TAG, "Ticks: source=PCNT (glitch_filter_ns=10000)");
   }
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
 
@@ -250,20 +302,14 @@ void counterTask(void *pvParam) {
   // Инициализируем массив коррекций скоростей
   init_speed_correction_array();
 
-  gpio_config_t di_config = {
-      .pin_bit_mask = (1ULL << DI),
-      .mode = GPIO_MODE_INPUT,
-      .pull_up_en = GPIO_PULLUP_ENABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE
-  };
-  gpio_config(&di_config);
-
   while (true) {
-    // Забираем накопленные тики из GPIO ISR (надёжный фоллбэк, работает вместе с PCNT)
-    int32_t pending_ticks = gpio_ticks_pending;
+    // Забираем накопленные тики из GPIO ISR (если активен ISR-режим)
+    int32_t pending_ticks = 0;
+    portENTER_CRITICAL(&s_gpio_ticks_mux);
+    pending_ticks = gpio_ticks_pending;
+    gpio_ticks_pending = 0;
+    portEXIT_CRITICAL(&s_gpio_ticks_mux);
     if (pending_ticks > 0) {
-      gpio_ticks_pending -= pending_ticks;
       rot += pending_ticks;
       app_state.water_current = rot;
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
@@ -348,6 +394,23 @@ void counterTask(void *pvParam) {
     }
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
+      if (notification & RESET_TICKS_BIT) {
+        // Сброс тиков через веб (делаем в контексте задачи, чтобы безопасно почистить PCNT/GPIO state)
+        rot = 0;
+        app_state.water_current = 0;
+        app_state.water_delta = 0;
+        pump_start_counter = 0;
+        // Сброс накопленных тиков из ISR
+        portENTER_CRITICAL(&s_gpio_ticks_mux);
+        gpio_ticks_pending = 0;
+        s_tick_last_cycle = 0;
+        portEXIT_CRITICAL(&s_gpio_ticks_mux);
+        // Сброс PCNT, если активен
+        if (pcnt_ready && pcnt_unit) {
+          (void)pcnt_unit_clear_count(pcnt_unit);
+        }
+        xTaskNotify(screen, UPDATE_BIT, eSetBits);
+      }
       if (notification & VALVE_SWITCH_BIT) {
         // Выполнить переключение клапанов в контексте задачи (разрешён I2C)
         int close_v = pending_close_valve;

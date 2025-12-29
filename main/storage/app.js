@@ -56,9 +56,7 @@ async function refreshStats(){
     if(!r.ok) return;
     const j=await r.json();
     if(!j||!j.ok) return;
-    if($('st-ticks')) $('st-ticks').textContent = (j.ticks!=null)?String(j.ticks):'—';
-    if($('st-target')) $('st-target').textContent = (j.water_target!=null)?String(j.water_target):'—';
-    // На главной (таблица "Устройство онлайн")
+    // Блок "Тики"
     if($('ticks')) $('ticks').textContent = (j.ticks!=null)?String(j.ticks):'—';
     if($('target')) $('target').textContent = (j.water_target!=null)?String(j.water_target):'—';
     if($('st-today')) $('st-today').textContent = (j.banks_today!=null)?String(j.banks_today):'—';
@@ -111,8 +109,14 @@ async function refreshConfig(){
     if($('cfg-flushall')) $('cfg-flushall').value = (j.flush_all_ms!=null)?String(j.flush_all_ms):'';
     if($('cfg-dryms')) $('cfg-dryms').value = (j.dry_run_timeout_ms!=null)?String(j.dry_run_timeout_ms):'';
     if($('cfg-drymin')) $('cfg-drymin').value = (j.dry_run_min_ticks!=null)?String(j.dry_run_min_ticks):'';
+    if($('cfg-ticksrc')) $('cfg-ticksrc').value = (j.tick_source!=null)?String(j.tick_source):'1';
+    if($('cfg-tickdeb')) $('cfg-tickdeb').value = (j.tick_min_interval_us!=null)?String(j.tick_min_interval_us):'';
+    if($('cfg-tickgpio')) $('cfg-tickgpio').value = (j.tick_gpio!=null)?('GPIO'+String(j.tick_gpio)):'';
+    if($('cfg-tickpull')) $('cfg-tickpull').value = (j.tick_pull!=null)?String(j.tick_pull):'0';
     if($('cfg-meta')) $('cfg-meta').textContent = (j.water_target!=null)?('water_target=' + j.water_target + ' ticks'):'—';
+    if($('tick-meta')) $('tick-meta').textContent = (j.water_target!=null)?('water_target=' + j.water_target + ' ticks'):'—';
     if($('cfg-msg')) $('cfg-msg').textContent = '';
+    if($('tick-msg')) $('tick-msg').textContent = '';
   }catch(e){}
 }
 
@@ -125,8 +129,49 @@ async function saveConfig(){
     const f2 = parseInt(($('cfg-flushall')||{}).value||'0',10)||0;
     const dryms = parseInt(($('cfg-dryms')||{}).value||'0',10)||0;
     const drymin = parseInt(($('cfg-drymin')||{}).value||'0',10)||0;
+    const ticksrc = parseInt(($('cfg-ticksrc')||{}).value||'1',10);
+    const tickdeb = parseInt(($('cfg-tickdeb')||{}).value||'0',10)||0;
+    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'0',10);
     if(msg) msg.textContent='Сохранение...';
-    const qs = `steps=${encodeURIComponent(String(steps))}&encoder=${encodeURIComponent(String(enc))}&flush_valve_ms=${encodeURIComponent(String(f1))}&flush_all_ms=${encodeURIComponent(String(f2))}&dry_run_timeout_ms=${encodeURIComponent(String(dryms))}&dry_run_min_ticks=${encodeURIComponent(String(drymin))}`;
+    const qs = `steps=${encodeURIComponent(String(steps))}&encoder=${encodeURIComponent(String(enc))}&flush_valve_ms=${encodeURIComponent(String(f1))}&flush_all_ms=${encodeURIComponent(String(f2))}&dry_run_timeout_ms=${encodeURIComponent(String(dryms))}&dry_run_min_ticks=${encodeURIComponent(String(drymin))}&tick_source=${encodeURIComponent(String(ticksrc))}&tick_min_interval_us=${encodeURIComponent(String(tickdeb))}&tick_pull=${encodeURIComponent(String(tickpull))}`;
+    const r=await fetch('/api/config?'+qs,{method:'POST'});
+    if(!r.ok){
+      const t=await r.text();
+      if(msg) msg.textContent='Ошибка: '+t;
+      return;
+    }
+    if(msg) msg.textContent='OK';
+    await refreshConfig();
+  }catch(e){
+    if(msg) msg.textContent='Ошибка';
+  }
+}
+
+async function resetTicks(){
+  const msg=$('tick-msg') || $('cfg-msg');
+  try{
+    if(msg) msg.textContent='Сброс тиков...';
+    const r=await fetch('/api/ticks/reset',{method:'POST'});
+    if(!r.ok){
+      const t=await r.text();
+      if(msg) msg.textContent='Ошибка: '+t;
+      return;
+    }
+    if(msg) msg.textContent='Тики сброшены';
+    await refreshStats();
+  }catch(e){
+    if(msg) msg.textContent='Ошибка';
+  }
+}
+
+async function saveTickConfig(){
+  const msg=$('tick-msg');
+  try{
+    const ticksrc = parseInt(($('cfg-ticksrc')||{}).value||'1',10);
+    const tickdeb = parseInt(($('cfg-tickdeb')||{}).value||'0',10)||0;
+    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'0',10);
+    if(msg) msg.textContent='Сохранение...';
+    const qs = `tick_source=${encodeURIComponent(String(ticksrc))}&tick_min_interval_us=${encodeURIComponent(String(tickdeb))}&tick_pull=${encodeURIComponent(String(tickpull))}`;
     const r=await fetch('/api/config?'+qs,{method:'POST'});
     if(!r.ok){
       const t=await r.text();
@@ -362,6 +407,9 @@ if($('btn-ioexp-refresh')) $('btn-ioexp-refresh').addEventListener('click', refr
 if($('btn-i2c-refresh')) $('btn-i2c-refresh').addEventListener('click', refreshI2c);
 if($('btn-cfg-reload')) $('btn-cfg-reload').addEventListener('click', refreshConfig);
 if($('btn-cfg-save')) $('btn-cfg-save').addEventListener('click', saveConfig);
+if($('btn-ticks-reset')) $('btn-ticks-reset').addEventListener('click', resetTicks);
+if($('btn-tick-reload')) $('btn-tick-reload').addEventListener('click', refreshConfig);
+if($('btn-tick-save')) $('btn-tick-save').addEventListener('click', saveTickConfig);
 if($('btn-st-save')) $('btn-st-save').addEventListener('click', saveStats);
 
 setInterval(refresh, 600); refresh();

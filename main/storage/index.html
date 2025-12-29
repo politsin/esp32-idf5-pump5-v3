@@ -25,8 +25,6 @@
           <tr><td class="k">RSSI</td><td id="rssi">—</td></tr>
           <tr><td class="k">Free heap</td><td id="heap">—</td></tr>
           <tr><td class="k">Uptime</td><td id="uptime">—</td></tr>
-          <tr><td class="k">Тики (счётчик)</td><td id="ticks">—</td></tr>
-          <tr><td class="k">Цель (ticks)</td><td id="target">—</td></tr>
           <tr><td class="k">App</td><td id="app">—</td></tr>
           <tr><td class="k">Version</td><td id="ver">—</td></tr>
           <tr><td class="k">Build</td><td id="build">—</td></tr>
@@ -62,7 +60,57 @@
     </div>
 
     <section class="card">
-      <h2>Настройки</h2>
+      <h2>Тики (счётчик расхода)</h2>
+      <div class="stats-grid" style="margin-top:10px">
+        <div class="stats-row"><span class="k">Тики (сейчас)</span><span id="ticks">—</span></div>
+        <div class="stats-row"><span class="k">Цель (ticks)</span><span id="target">—</span></div>
+      </div>
+      <div class="row" style="justify-content: flex-end; margin-top: 10px">
+        <button class="btn btn-small" id="btn-ticks-reset">Сбросить тики</button>
+      </div>
+      <div class="muted" id="tick-msg"></div>
+
+      <div class="muted" style="margin-top: 12px">Настройки тиков (сохраняются в NVS; менять только когда idle).</div>
+      <div class="cfg-grid" style="margin-top: 10px">
+        <label class="cfg-row">
+          <span class="cfg-k">Источник</span>
+          <select id="cfg-ticksrc" class="cfg-in">
+            <option value="1">GPIO ISR + debounce</option>
+            <option value="0">PCNT (аппаратный)</option>
+          </select>
+        </label>
+        <div class="muted" style="grid-column: 1 / -1; margin-top:-6px">
+          GPIO ISR — проще и гибче (debounce в мкс), обычно лучше на длинных проводах/шумном сигнале.
+          PCNT — аппаратный счётчик (лучше на высокой частоте), но требует нормальных уровней/фильтра от наводок.
+        </div>
+        <label class="cfg-row">
+          <span class="cfg-k">Debounce (мкс)</span>
+          <input id="cfg-tickdeb" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">GPIO</span>
+          <input id="cfg-tickgpio" class="cfg-in" type="text" readonly />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Подтяжка DI (внутр.)</span>
+          <select id="cfg-tickpull" class="cfg-in">
+            <option value="0">OFF</option>
+            <option value="1">PULL-UP</option>
+            <option value="2">PULL-DOWN</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <div class="muted" id="tick-meta">—</div>
+        <div class="row" style="margin:0">
+          <button class="btn btn-small" id="btn-tick-reload">Обновить</button>
+          <button class="btn btn-small" id="btn-tick-save">Сохранить</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Настройки налива</h2>
       <div class="muted">Уставки сохраняются в NVS. Применение — только когда устройство не работает (idle).</div>
       <div class="cfg-grid">
         <label class="cfg-row">
@@ -124,8 +172,6 @@
     <details class="card">
       <summary>Статистика банок</summary>
       <div class="stats-grid" style="margin-top:10px">
-        <div class="stats-row"><span class="k">Тики (счётчик)</span><span id="st-ticks">—</span></div>
-        <div class="stats-row"><span class="k">Цель (ticks)</span><span id="st-target">—</span></div>
         <div class="stats-row"><span class="k">Сегодня</span><span id="st-today">—</span></div>
         <div class="stats-row"><span class="k">Всего</span><span id="st-total">—</span></div>
       </div>

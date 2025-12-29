@@ -26,6 +26,10 @@ static int32_t s_flush_valve_ms = 1000; // один клапан (мс)
 static int32_t s_flush_all_ms = 2000;   // все клапаны (мс)
 static int32_t s_dry_run_timeout_ms = 3000; // окно контроля "сухого хода" (мс) — по задаче 3 секунды
 static int32_t s_dry_run_min_ticks = 50;    // минимальный прирост тиков за это окно
+// Настройки счётчика тиков (DI)
+static int32_t s_tick_source = 1;           // 0=PCNT, 1=GPIO ISR + debounce (по умолчанию — более надёжно на "грязном" сигнале)
+static int32_t s_tick_min_interval_us = 0; // debounce выключен (считаем каждое прерывание)
+static int32_t s_tick_pull = 0;            // 0=OFF, 1=PULL-UP, 2=PULL-DOWN (по умолчанию OFF)
 
 void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
   if (steps) *steps = s_steps;
@@ -37,6 +41,12 @@ void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *
 void config_get_cached_dry_run(int32_t *dry_run_timeout_ms, int32_t *dry_run_min_ticks) {
   if (dry_run_timeout_ms) *dry_run_timeout_ms = s_dry_run_timeout_ms;
   if (dry_run_min_ticks) *dry_run_min_ticks = s_dry_run_min_ticks;
+}
+
+void config_get_cached_tick_counter(int32_t *tick_source, int32_t *tick_min_interval_us, int32_t *tick_pull) {
+  if (tick_source) *tick_source = s_tick_source;
+  if (tick_min_interval_us) *tick_min_interval_us = s_tick_min_interval_us;
+  if (tick_pull) *tick_pull = s_tick_pull;
 }
 
 esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
@@ -98,6 +108,43 @@ esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *f
   } else {
     ESP_LOGW(CONFIG_TAG, "Error reading dry_run_min_ticks: %s", esp_err_to_name(err));
   }
+
+  // tick_source
+  err = config->get_item("tick_source", tmp);
+  if (err == ESP_OK) s_tick_source = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("tick_source", s_tick_source);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading tick_source: %s", esp_err_to_name(err));
+  }
+
+  // tick_min_interval_us
+  err = config->get_item("tick_min_interval_us", tmp);
+  if (err == ESP_OK) s_tick_min_interval_us = tmp;
+  else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    (void)config->set_item("tick_min_interval_us", s_tick_min_interval_us);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading tick_min_interval_us: %s", esp_err_to_name(err));
+  }
+
+  // tick_pull (0=OFF, 1=UP, 2=DOWN)
+  err = config->get_item("tick_pull", tmp);
+  if (err == ESP_OK) {
+    s_tick_pull = tmp;
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    // Совместимость со старым ключом tick_pullup (0/1)
+    int32_t legacy = 0;
+    esp_err_t e2 = config->get_item("tick_pullup", legacy);
+    if (e2 == ESP_OK) {
+      s_tick_pull = (legacy != 0) ? 1 : 0;
+    }
+    (void)config->set_item("tick_pull", s_tick_pull);
+  } else {
+    ESP_LOGW(CONFIG_TAG, "Error reading tick_pull: %s", esp_err_to_name(err));
+  }
+
+  // Санитизация на всякий случай
+  if (s_tick_pull < 0 || s_tick_pull > 2) s_tick_pull = 0;
 
   // commit на случай, если какие-то ключи отсутствовали и мы их проставили дефолтами
   (void)config->commit();
@@ -205,8 +252,10 @@ esp_err_t config_init() {
     {
       int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
       (void)config_load_pump_settings(&steps, &enc, &f1, &f2);
-      ESP_LOGW(CONFIG_TAG, "Pump settings: steps=%ld encoder=%ld flush_valve_ms=%ld flush_all_ms=%ld dry_run_timeout_ms=%ld dry_run_min_ticks=%ld",
-               (long)steps, (long)enc, (long)f1, (long)f2, (long)s_dry_run_timeout_ms, (long)s_dry_run_min_ticks);
+      ESP_LOGW(CONFIG_TAG, "Pump settings: steps=%ld encoder=%ld flush_valve_ms=%ld flush_all_ms=%ld dry_run_timeout_ms=%ld dry_run_min_ticks=%ld tick_source=%ld tick_min_interval_us=%ld",
+               (long)steps, (long)enc, (long)f1, (long)f2,
+               (long)s_dry_run_timeout_ms, (long)s_dry_run_min_ticks,
+               (long)s_tick_source, (long)s_tick_min_interval_us);
     }
 
     // Write

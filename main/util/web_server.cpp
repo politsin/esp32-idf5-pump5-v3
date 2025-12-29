@@ -23,6 +23,7 @@
 #include "config.h"
 #include "i2c.h"
 #include "main.h"
+#include "task/counterTask.h"
 
 #include "pcf8575_io.h"
 #include "spiffs_fs.h"
@@ -71,8 +72,49 @@ static const char *content_type_for(const char *path) {
   return "application/octet-stream";
 }
 
+static esp_err_t send_spiffs_error_page(httpd_req_t *req, const char *reason) {
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  httpd_resp_set_status(req, "200 OK");
+
+  // Небольшая страница-подсказка, когда SPIFFS (storage) не смонтирован / пустой.
+  // Важно: не собираем страницу через snprintf в фиксированный буфер — в IDF сборках часто включён
+  // -Werror=format-truncation, и это ломает билд. Шлём HTML чанками.
+  const char *r = (reason && reason[0]) ? reason : "unknown";
+
+  esp_err_t err = ESP_OK;
+  err = httpd_resp_sendstr_chunk(req,
+                                 "<!doctype html><html><head><meta charset='utf-8'>"
+                                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                                 "<title>PUMP Web</title>"
+                                 "<style>"
+                                 "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;max-width:820px}"
+                                 "code{background:#f2f2f2;padding:2px 6px;border-radius:6px}"
+                                 ".box{border:1px solid #ddd;border-radius:12px;padding:16px}"
+                                 "h1{margin:0 0 8px 0;font-size:20px}"
+                                 "p{margin:8px 0;line-height:1.4}"
+                                 "</style></head><body><div class='box'>"
+                                 "<h1>Web UI недоступен (SPIFFS)</h1>"
+                                 "<p>Раздел <code>storage</code> (SPIFFS) не смонтировался или не содержит файлов веб‑морды.</p>"
+                                 "<p><b>Причина:</b> <code>");
+  if (err != ESP_OK) return err;
+  err = httpd_resp_send_chunk(req, r, HTTPD_RESP_USE_STRLEN);
+  if (err != ESP_OK) return err;
+  err = httpd_resp_sendstr_chunk(req,
+                                 "</code></p>"
+                                 "<p><b>Что сделать:</b> залить <code>storage.bin</code> через <code>/api/ota/storage</code> "
+                                 "или выполнить <code>tools/ota_upload.ps1</code>.</p>"
+                                 "<p>API без UI: <code>/info.json</code>, <code>/api/config</code>, <code>/api/stats</code>, <code>/api/log</code>.</p>"
+                                 "</div></body></html>");
+  if (err != ESP_OK) return err;
+  return httpd_resp_sendstr_chunk(req, nullptr);
+}
+
 static esp_err_t send_file_from_spiffs(httpd_req_t *req, const char *rel_uri) {
-  (void)spiffs_fs_mount();
+  const esp_err_t m = spiffs_fs_mount();
+  if (m != ESP_OK) {
+    ESP_LOGE(TAG, "SPIFFS mount failed: %s", esp_err_to_name(m));
+    return send_spiffs_error_page(req, esp_err_to_name(m));
+  }
 
   const char *uri = rel_uri ? rel_uri : req->uri;
   char path[256];
@@ -203,7 +245,7 @@ static esp_err_t api_status_get_handler(httpd_req_t *req) {
   const bool p3 = ioexp_get_valve(3);
   const bool p4 = ioexp_get_valve(4);
 
-  char body[256];
+  char body[320];
   const int n = snprintf(body, sizeof(body),
                          "{"
                          "\"pump\":%d,"
@@ -299,6 +341,24 @@ static esp_err_t api_stats_post_handler(httpd_req_t *req) {
   return api_stats_get_handler(req);
 }
 
+static esp_err_t api_ticks_reset_post_handler(httpd_req_t *req) {
+  // Сбрасывать тики безопасно только в idle, чтобы не ломать текущий цикл.
+  if (app_state.is_on) {
+    httpd_resp_set_status(req, "409 Conflict");
+    return httpd_resp_send(req, "running", HTTPD_RESP_USE_STRLEN);
+  }
+  if (!counter) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    return httpd_resp_send(req, "counter task not ready", HTTPD_RESP_USE_STRLEN);
+  }
+
+  // Запрашиваем сброс в контексте задачи counter (там же чистится PCNT/ISR state).
+  xTaskNotify(counter, RESET_TICKS_BIT, eSetBits);
+
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, "{\"ok\":1}", HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t api_i2c_get_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "application/json");
 
@@ -321,9 +381,11 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
   config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
   int32_t dry_ms = 0, dry_min = 0;
   config_get_cached_dry_run(&dry_ms, &dry_min);
+  int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
+  config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
   const int32_t target = steps + enc;
 
-  char body[256];
+  char body[512];
   const int n = snprintf(body, sizeof(body),
                          "{"
                          "\"ok\":1,"
@@ -333,10 +395,17 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
                          "\"flush_valve_ms\":%ld,"
                          "\"flush_all_ms\":%ld,"
                          "\"dry_run_timeout_ms\":%ld,"
-                         "\"dry_run_min_ticks\":%ld"
+                         "\"dry_run_min_ticks\":%ld,"
+                         "\"tick_source\":%ld,"
+                         "\"tick_min_interval_us\":%ld,"
+                         "\"tick_pull\":%ld,"
+                         "\"tick_gpio\":%ld"
                          "}",
-                         (long)steps, (long)enc, (long)target, (long)f1, (long)f2, (long)dry_ms, (long)dry_min);
-  if (n <= 0) return httpd_resp_send_500(req);
+                         (long)steps, (long)enc, (long)target, (long)f1, (long)f2,
+                         (long)dry_ms, (long)dry_min,
+                         (long)tick_source, (long)tick_min_us, (long)tick_pull,
+                         (long)COUNTER_TICK_GPIO);
+  if (n <= 0 || n >= (int)sizeof(body)) return httpd_resp_send_500(req);
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -364,6 +433,8 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
   int32_t dry_ms = 0, dry_min = 0;
   config_get_cached_dry_run(&dry_ms, &dry_min);
+  int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
+  config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
 
   int32_t v = 0;
   if (get_i32("steps", &v)) steps = v;
@@ -372,6 +443,12 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   if (get_i32("flush_all_ms", &v)) f2 = v;
   if (get_i32("dry_run_timeout_ms", &v)) dry_ms = v;
   if (get_i32("dry_run_min_ticks", &v)) dry_min = v;
+  if (get_i32("tick_source", &v)) tick_source = v;
+  if (get_i32("tick_min_interval_us", &v)) tick_min_us = v;
+  // Новый ключ
+  if (get_i32("tick_pull", &v)) tick_pull = v;
+  // Совместимость со старым ключом
+  if (get_i32("tick_pullup", &v)) tick_pull = (v != 0) ? 1 : 0;
 
   // Валидация
   if (steps < 1 || steps > 500000) {
@@ -398,6 +475,18 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "bad dry_run_min_ticks", HTTPD_RESP_USE_STRLEN);
   }
+  if (tick_source < 0 || tick_source > 1) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad tick_source", HTTPD_RESP_USE_STRLEN);
+  }
+  if (tick_min_us < 0 || tick_min_us > 500000) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad tick_min_interval_us", HTTPD_RESP_USE_STRLEN);
+  }
+  if (tick_pull < 0 || tick_pull > 2) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad tick_pull", HTTPD_RESP_USE_STRLEN);
+  }
 
   const esp_err_t err = config_save_pump_settings(steps, enc, f1, f2);
   if (err != ESP_OK) {
@@ -410,6 +499,9 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   if (config) {
     (void)config->set_item("dry_run_timeout_ms", dry_ms);
     (void)config->set_item("dry_run_min_ticks", dry_min);
+    (void)config->set_item("tick_source", tick_source);
+    (void)config->set_item("tick_min_interval_us", tick_min_us);
+    (void)config->set_item("tick_pull", tick_pull);
     (void)config->commit();
     // Обновим кэш, чтобы GET /api/config сразу отдал актуальные значения
     (void)config_load_pump_settings(nullptr, nullptr, nullptr, nullptr);
@@ -801,6 +893,13 @@ esp_err_t web_server_start(void) {
   stats_set.method = HTTP_POST;
   stats_set.handler = api_stats_post_handler;
   httpd_register_uri_handler(s_server, &stats_set);
+
+  // /api/ticks/reset
+  httpd_uri_t ticks_reset = {};
+  ticks_reset.uri = "/api/ticks/reset";
+  ticks_reset.method = HTTP_POST;
+  ticks_reset.handler = api_ticks_reset_post_handler;
+  httpd_register_uri_handler(s_server, &ticks_reset);
 
   // /api/toggle
   httpd_uri_t toggle = {};
