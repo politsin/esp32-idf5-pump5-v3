@@ -72,6 +72,19 @@ static TickType_t last_correction_time = 0;
 static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
 static const int32_t TARGET_ML = 250; // Целевой объём в мл
 
+static inline int32_t current_base_target_ticks() {
+  return (int32_t)app_config.steps + (int32_t)app_state.encoder;
+}
+
+static inline void refresh_all_valve_targets_from_config() {
+  const int32_t base = current_base_target_ticks();
+  app_state.previous_target = base;
+  app_state.water_target = base;
+  for (int i = 0; i < NUM_VALVES; i++) {
+    valve_targets[i] = base;
+  }
+}
+
 // Простая линейная экстраполяция по двум точкам
 static const float NORMAL_TIME = 7.0f;    // Нормальное время (7 сек)
 static const float SLOW_TIME = 15.0f;     // Медленное время (15 сек)
@@ -289,15 +302,7 @@ void counterTask(void *pvParam) {
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
-  app_state.water_target = app_config.steps + app_state.encoder;
-  
-  // Инициализируем массив целей для каждого клапана
-  for (int i = 0; i < NUM_VALVES; i++) {
-    valve_targets[i] = app_config.steps + app_state.encoder;
-  }
-  
-  // Инициализируем previous_target базовым значением из настроек
-  app_state.previous_target = app_config.steps + app_state.encoder;
+  refresh_all_valve_targets_from_config();
   
   // Инициализируем массив коррекций скоростей
   init_speed_correction_array();
@@ -565,6 +570,9 @@ void counterTask(void *pvParam) {
         app_state.rock = true;
         ESP_LOGW(COUNTER_TAG, "Run!");
         rot = 0;
+        // Важно: цель могла быть изменена через web/NVS после старта задачи.
+        // Обновляем targets при каждом RUN из текущих app_config/app_state.
+        refresh_all_valve_targets_from_config();
         isOn = true;
         pumpOn = true;
         ioexp_set_pump(isOn);
@@ -635,12 +643,7 @@ void counterTask(void *pvParam) {
         ioexp_set_pump(false);
       }
       if (notification & ENCODER_CHANGED_BIT) {
-        app_state.water_target = app_config.steps + app_state.encoder;
-        
-        // Обновляем массив целей для всех клапанов
-        for (int i = 0; i < NUM_VALVES; i++) {
-          valve_targets[i] = app_config.steps + app_state.encoder;
-        }
+        refresh_all_valve_targets_from_config();
         
         // app_config.encoder = app_state.encoder;
         // config->set_item("steps", app_config.encoder);

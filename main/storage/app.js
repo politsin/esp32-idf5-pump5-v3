@@ -67,6 +67,19 @@ async function refreshStats(){
   }catch(e){}
 }
 
+async function refreshTickLevel(){
+  const el=$('tick-level');
+  if(!el) return;
+  try{
+    const r=await fetch('/api/ticks/level',{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(!j||!j.ok) return;
+    const lvl = (j.level!=null) ? (j.level ? 'HIGH(1)' : 'LOW(0)') : '—';
+    el.textContent = lvl;
+  }catch(e){}
+}
+
 async function saveStats(){
   const msg=$('st-msg');
   try{
@@ -417,6 +430,7 @@ setInterval(refreshInfo, 1500); refreshInfo();
 setInterval(refreshIoexp, 350); refreshIoexp();
 setInterval(refreshI2c, 1200); refreshI2c();
 setInterval(refreshStats, 1500); refreshStats();
+setInterval(refreshTickLevel, 3000); refreshTickLevel();
 refreshConfig();
 
 

@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "driver/gpio.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -357,6 +358,21 @@ static esp_err_t api_ticks_reset_post_handler(httpd_req_t *req) {
 
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_send(req, "{\"ok\":1}", HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_ticks_level_get_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+  const int level = gpio_get_level(COUNTER_TICK_GPIO) ? 1 : 0;
+  char body[96];
+  const int n = snprintf(body, sizeof(body),
+                         "{"
+                         "\"ok\":1,"
+                         "\"gpio\":%ld,"
+                         "\"level\":%d"
+                         "}",
+                         (long)COUNTER_TICK_GPIO, level);
+  if (n <= 0 || n >= (int)sizeof(body)) return httpd_resp_send_500(req);
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t api_i2c_get_handler(httpd_req_t *req) {
@@ -900,6 +916,13 @@ esp_err_t web_server_start(void) {
   ticks_reset.method = HTTP_POST;
   ticks_reset.handler = api_ticks_reset_post_handler;
   httpd_register_uri_handler(s_server, &ticks_reset);
+
+  // /api/ticks/level
+  httpd_uri_t ticks_level = {};
+  ticks_level.uri = "/api/ticks/level";
+  ticks_level.method = HTTP_GET;
+  ticks_level.handler = api_ticks_level_get_handler;
+  httpd_register_uri_handler(s_server, &ticks_level);
 
   // /api/toggle
   httpd_uri_t toggle = {};
