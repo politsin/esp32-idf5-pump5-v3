@@ -118,6 +118,12 @@ async function refreshConfig(){
     if(!j||!j.ok) return;
     if($('cfg-steps')) $('cfg-steps').value = (j.steps!=null)?String(j.steps):'';
     if($('cfg-enc')) $('cfg-enc').value = (j.encoder!=null)?String(j.encoder):'';
+    if(Array.isArray(j.valve_off)){
+      if($('cfg-voff1')) $('cfg-voff1').value = (j.valve_off[0]!=null)?String(j.valve_off[0]):'0';
+      if($('cfg-voff2')) $('cfg-voff2').value = (j.valve_off[1]!=null)?String(j.valve_off[1]):'0';
+      if($('cfg-voff3')) $('cfg-voff3').value = (j.valve_off[2]!=null)?String(j.valve_off[2]):'0';
+      if($('cfg-voff4')) $('cfg-voff4').value = (j.valve_off[3]!=null)?String(j.valve_off[3]):'0';
+    }
     if($('cfg-flush1')) $('cfg-flush1').value = (j.flush_valve_ms!=null)?String(j.flush_valve_ms):'';
     if($('cfg-flushall')) $('cfg-flushall').value = (j.flush_all_ms!=null)?String(j.flush_all_ms):'';
     if($('cfg-dryms')) $('cfg-dryms').value = (j.dry_run_timeout_ms!=null)?String(j.dry_run_timeout_ms):'';
@@ -126,8 +132,14 @@ async function refreshConfig(){
     if($('cfg-tickdeb')) $('cfg-tickdeb').value = (j.tick_min_interval_us!=null)?String(j.tick_min_interval_us):'';
     if($('cfg-tickgpio')) $('cfg-tickgpio').value = (j.tick_gpio!=null)?('GPIO'+String(j.tick_gpio)):'';
     if($('cfg-tickpull')) $('cfg-tickpull').value = (j.tick_pull!=null)?String(j.tick_pull):'0';
-    if($('cfg-meta')) $('cfg-meta').textContent = (j.water_target!=null)?('water_target=' + j.water_target + ' ticks'):'—';
-    if($('tick-meta')) $('tick-meta').textContent = (j.water_target!=null)?('water_target=' + j.water_target + ' ticks'):'—';
+    if($('cfg-meta')){
+      if(Array.isArray(j.valve_target)){
+        $('cfg-meta').textContent = `base=${j.water_target} ticks; P1=${j.valve_target[0]} P2=${j.valve_target[1]} P3=${j.valve_target[2]} P4=${j.valve_target[3]}`;
+      }else{
+        $('cfg-meta').textContent = (j.water_target!=null)?('base=' + j.water_target + ' ticks'):'—';
+      }
+    }
+    if($('tick-meta')) $('tick-meta').textContent = (j.water_target!=null)?('base=' + j.water_target + ' ticks'):'—';
     if($('cfg-msg')) $('cfg-msg').textContent = '';
     if($('tick-msg')) $('tick-msg').textContent = '';
   }catch(e){}
@@ -138,6 +150,10 @@ async function saveConfig(){
   try{
     const steps = parseInt(($('cfg-steps')||{}).value||'0',10)||0;
     const enc = parseInt(($('cfg-enc')||{}).value||'0',10)||0;
+    const voff1 = parseInt(($('cfg-voff1')||{}).value||'0',10)||0;
+    const voff2 = parseInt(($('cfg-voff2')||{}).value||'0',10)||0;
+    const voff3 = parseInt(($('cfg-voff3')||{}).value||'0',10)||0;
+    const voff4 = parseInt(($('cfg-voff4')||{}).value||'0',10)||0;
     const f1 = parseInt(($('cfg-flush1')||{}).value||'0',10)||0;
     const f2 = parseInt(($('cfg-flushall')||{}).value||'0',10)||0;
     const dryms = parseInt(($('cfg-dryms')||{}).value||'0',10)||0;
@@ -146,7 +162,20 @@ async function saveConfig(){
     const tickdeb = parseInt(($('cfg-tickdeb')||{}).value||'0',10)||0;
     const tickpull = parseInt(($('cfg-tickpull')||{}).value||'0',10);
     if(msg) msg.textContent='Сохранение...';
-    const qs = `steps=${encodeURIComponent(String(steps))}&encoder=${encodeURIComponent(String(enc))}&flush_valve_ms=${encodeURIComponent(String(f1))}&flush_all_ms=${encodeURIComponent(String(f2))}&dry_run_timeout_ms=${encodeURIComponent(String(dryms))}&dry_run_min_ticks=${encodeURIComponent(String(drymin))}&tick_source=${encodeURIComponent(String(ticksrc))}&tick_min_interval_us=${encodeURIComponent(String(tickdeb))}&tick_pull=${encodeURIComponent(String(tickpull))}`;
+    const qs =
+      `steps=${encodeURIComponent(String(steps))}` +
+      `&encoder=${encodeURIComponent(String(enc))}` +
+      `&valve_off1=${encodeURIComponent(String(voff1))}` +
+      `&valve_off2=${encodeURIComponent(String(voff2))}` +
+      `&valve_off3=${encodeURIComponent(String(voff3))}` +
+      `&valve_off4=${encodeURIComponent(String(voff4))}` +
+      `&flush_valve_ms=${encodeURIComponent(String(f1))}` +
+      `&flush_all_ms=${encodeURIComponent(String(f2))}` +
+      `&dry_run_timeout_ms=${encodeURIComponent(String(dryms))}` +
+      `&dry_run_min_ticks=${encodeURIComponent(String(drymin))}` +
+      `&tick_source=${encodeURIComponent(String(ticksrc))}` +
+      `&tick_min_interval_us=${encodeURIComponent(String(tickdeb))}` +
+      `&tick_pull=${encodeURIComponent(String(tickpull))}`;
     const r=await fetch('/api/config?'+qs,{method:'POST'});
     if(!r.ok){
       const t=await r.text();

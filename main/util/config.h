@@ -8,6 +8,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "nvs_handle.hpp"
+#include "main.h"
 
 esp_err_t config_init();
 esp_err_t save_total_banks_count(int32_t total_banks);
@@ -25,6 +26,10 @@ esp_err_t check_and_reset_daily_counter();
 esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
 esp_err_t config_save_pump_settings(int32_t steps, int32_t encoder, int32_t flush_valve_ms, int32_t flush_all_ms);
 void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
+
+// Индивидуальные сдвиги уставки по клапанам (в тиках): target_i = steps + encoder + valve_offset[i]
+void config_get_cached_valve_offsets(int32_t valve_offset[NUM_VALVES]);
+esp_err_t config_save_valve_offsets(const int32_t valve_offset[NUM_VALVES]);
 
 // Защита от "сухого хода": помпа работает, но счётчик почти не растёт.
 // - dry_run_timeout_ms: окно времени для проверки (мс)

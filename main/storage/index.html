@@ -122,6 +122,25 @@
           <span class="cfg-k">Энкодер (offset ticks)</span>
           <input id="cfg-enc" class="cfg-in" type="number" step="1" />
         </label>
+        <div class="muted" style="grid-column: 1 / -1; margin-top:-6px">
+          Итоговая уставка для каждого клапана считается так: <code>(steps + encoder) + offset_клапана</code>.
+        </div>
+        <label class="cfg-row">
+          <span class="cfg-k">Offset P1 (ticks)</span>
+          <input id="cfg-voff1" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Offset P2 (ticks)</span>
+          <input id="cfg-voff2" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Offset P3 (ticks)</span>
+          <input id="cfg-voff3" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Offset P4 (ticks)</span>
+          <input id="cfg-voff4" class="cfg-in" type="number" step="1" />
+        </label>
         <label class="cfg-row">
           <span class="cfg-k">FLUSH: 1 клапан (мс)</span>
           <input id="cfg-flush1" class="cfg-in" type="number" step="1" />

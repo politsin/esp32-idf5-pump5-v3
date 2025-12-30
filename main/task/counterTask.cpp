@@ -76,13 +76,31 @@ static inline int32_t current_base_target_ticks() {
   return (int32_t)app_config.steps + (int32_t)app_state.encoder;
 }
 
+static inline int32_t current_valve_nominal_target_ticks(int valve_idx0) {
+  if (valve_idx0 < 0) valve_idx0 = 0;
+  if (valve_idx0 >= NUM_VALVES) valve_idx0 = NUM_VALVES - 1;
+  return current_base_target_ticks() + (int32_t)app_config.valve_offset[valve_idx0];
+}
+
+static inline void refresh_valve_target_from_config(int valve_idx0) {
+  if (valve_idx0 < 0) valve_idx0 = 0;
+  if (valve_idx0 >= NUM_VALVES) valve_idx0 = NUM_VALVES - 1;
+  const int32_t t = current_valve_nominal_target_ticks(valve_idx0);
+  valve_targets[valve_idx0] = t;
+  // Для UI: показываем уставку текущего канала/клапана (без учёта коррекции скорости)
+  app_state.previous_target = t;
+  app_state.water_target = t;
+}
+
 static inline void refresh_all_valve_targets_from_config() {
   const int32_t base = current_base_target_ticks();
-  app_state.previous_target = base;
-  app_state.water_target = base;
   for (int i = 0; i < NUM_VALVES; i++) {
-    valve_targets[i] = base;
+    valve_targets[i] = base + (int32_t)app_config.valve_offset[i];
   }
+  // Для UI: показываем уставку текущего клапана (если известен), иначе P1
+  const int idx0 = (current_valve >= 1 && current_valve <= NUM_VALVES) ? (current_valve - 1) : 0;
+  app_state.previous_target = valve_targets[idx0];
+  app_state.water_target = valve_targets[idx0];
 }
 
 // Простая линейная экстраполяция по двум точкам
@@ -170,6 +188,7 @@ static void init_speed_correction_array() {
 app_config_t app_config = {
     .steps = 1075,
     .encoder = 0,
+    .valve_offset = {0, 0, 0, 0},
 };
 
 void counterTask(void *pvParam) {
@@ -284,6 +303,9 @@ void counterTask(void *pvParam) {
     config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
     if (steps > 0) app_config.steps = (uint32_t)steps;
     app_config.encoder = enc;
+    int32_t voff[NUM_VALVES] = {0};
+    config_get_cached_valve_offsets(voff);
+    for (int i = 0; i < NUM_VALVES; i++) app_config.valve_offset[i] = voff[i];
     // Важно: app_state.encoder — это смещение, которое участвует в расчёте цели.
     app_state.encoder = app_config.encoder;
     g_flush_valve_ms = (f1 > 0) ? f1 : g_flush_valve_ms;
@@ -353,12 +375,12 @@ void counterTask(void *pvParam) {
           pump_start_time = xTaskGetTickCount();
           last_correction_rot = 0;
           last_correction_time = xTaskGetTickCount();
-          valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+          refresh_valve_target_from_config(current_valve - 1);
           accumulated_overpoured_ticks[current_valve - 1] = 0;
           xTaskNotify(screen, UPDATE_BIT, eSetBits);
         } else {
           if (rot == 0) {
-            valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+            refresh_valve_target_from_config(current_valve - 1);
           }
         }
       }
@@ -391,7 +413,7 @@ void counterTask(void *pvParam) {
           pump_start_time = xTaskGetTickCount();
           last_correction_rot = 0;
           last_correction_time = xTaskGetTickCount();
-          valve_targets[current_valve - 1] = app_config.steps + app_state.encoder;
+          refresh_valve_target_from_config(current_valve - 1);
           accumulated_overpoured_ticks[current_valve - 1] = 0;
           xTaskNotify(screen, UPDATE_BIT, eSetBits);
         }
@@ -599,6 +621,8 @@ void counterTask(void *pvParam) {
         
         // СРАЗУ открываем первый клапан при старте
         app_state.valve = 1;
+        // Для UI: показываем уставку первого клапана (с учётом base+encoder+offset)
+        refresh_valve_target_from_config(0);
         ioexp_set_valve(1, true);
         ioexp_set_valve(2, false);
         ioexp_set_valve(3, false);
@@ -754,8 +778,9 @@ void counterTask(void *pvParam) {
       
       if (total_valve_time > 0.1f) { // чтобы не было деления на ноль
         // Рассчитываем текущую скорость налива
-        int32_t current_base_target = app_config.steps + app_state.encoder;
-        float current_speed_ml_per_second = (rot * TARGET_ML) / (current_base_target * total_valve_time);
+        const int idx0 = current_valve - 1;
+        const int32_t current_nominal_target = current_valve_nominal_target_ticks(idx0);
+        float current_speed_ml_per_second = (rot * TARGET_ML) / (current_nominal_target * total_valve_time);
         
         // Коррекция цели на основе скорости потока
         if (current_speed_ml_per_second < NORMAL_SPEED_ML_PER_SECOND) {
@@ -774,8 +799,8 @@ void counterTask(void *pvParam) {
             // Устанавливаем скорректированную цель
             valve_targets[current_valve - 1] = new_target;
             
-            // Обновляем previous_target для отображения на экране (базовый target из настроек)
-            app_state.previous_target = current_base_target;
+            // Обновляем previous_target для отображения на экране (номинальная уставка для текущего клапана)
+            app_state.previous_target = current_nominal_target;
             app_state.water_target = new_target;
             
             // ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks

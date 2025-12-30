@@ -11,9 +11,17 @@ void loop(void *pvParameter);
 #ifndef APP_MAIN_H_
 #define APP_MAIN_H_
 
+// Количество клапанов (помп/каналов) в системе
+#ifndef NUM_VALVES
+#define NUM_VALVES 4
+#endif
+
 typedef struct {
   uint32_t steps;
   int32_t encoder;
+  // Индивидуальные сдвиги уставки (в тиках) для каждого клапана:
+  // target_i = (steps + encoder) + valve_offset[i]
+  int32_t valve_offset[NUM_VALVES];
 } app_config_t;
 
 typedef struct {
@@ -26,10 +34,6 @@ typedef struct {
   int32_t water_delta;
   int32_t freeHeap;
   int8_t valve;
-  // Количество клапанов в системе
-#ifndef NUM_VALVES
-#define NUM_VALVES 4
-#endif
   int32_t valve_times[NUM_VALVES]; // Время налива для каждого клапана P1..PN (в секундах)
   int32_t banks_count; // Счётчик налитых банок
   int32_t total_banks_count; // Общий счётчик банок с момента старта устройства

@@ -395,19 +395,23 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
 
   int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
   config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
+  int32_t voff[NUM_VALVES] = {0};
+  config_get_cached_valve_offsets(voff);
   int32_t dry_ms = 0, dry_min = 0;
   config_get_cached_dry_run(&dry_ms, &dry_min);
   int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
   config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
   const int32_t target = steps + enc;
 
-  char body[512];
+  char body[768];
   const int n = snprintf(body, sizeof(body),
                          "{"
                          "\"ok\":1,"
                          "\"steps\":%ld,"
                          "\"encoder\":%ld,"
                          "\"water_target\":%ld,"
+                         "\"valve_off\":[%ld,%ld,%ld,%ld],"
+                         "\"valve_target\":[%ld,%ld,%ld,%ld],"
                          "\"flush_valve_ms\":%ld,"
                          "\"flush_all_ms\":%ld,"
                          "\"dry_run_timeout_ms\":%ld,"
@@ -417,7 +421,10 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
                          "\"tick_pull\":%ld,"
                          "\"tick_gpio\":%ld"
                          "}",
-                         (long)steps, (long)enc, (long)target, (long)f1, (long)f2,
+                         (long)steps, (long)enc, (long)target,
+                         (long)voff[0], (long)voff[1], (long)voff[2], (long)voff[3],
+                         (long)(target + voff[0]), (long)(target + voff[1]), (long)(target + voff[2]), (long)(target + voff[3]),
+                         (long)f1, (long)f2,
                          (long)dry_ms, (long)dry_min,
                          (long)tick_source, (long)tick_min_us, (long)tick_pull,
                          (long)COUNTER_TICK_GPIO);
@@ -432,7 +439,7 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     return httpd_resp_send(req, "running", HTTPD_RESP_USE_STRLEN);
   }
 
-  char query[256];
+  char query[384];
   if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "missing query", HTTPD_RESP_USE_STRLEN);
@@ -447,6 +454,8 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
 
   int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
   config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
+  int32_t voff[NUM_VALVES] = {0};
+  config_get_cached_valve_offsets(voff);
   int32_t dry_ms = 0, dry_min = 0;
   config_get_cached_dry_run(&dry_ms, &dry_min);
   int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
@@ -455,6 +464,10 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   int32_t v = 0;
   if (get_i32("steps", &v)) steps = v;
   if (get_i32("encoder", &v)) enc = v;
+  if (get_i32("valve_off1", &v)) voff[0] = v;
+  if (get_i32("valve_off2", &v)) voff[1] = v;
+  if (get_i32("valve_off3", &v)) voff[2] = v;
+  if (get_i32("valve_off4", &v)) voff[3] = v;
   if (get_i32("flush_valve_ms", &v)) f1 = v;
   if (get_i32("flush_all_ms", &v)) f2 = v;
   if (get_i32("dry_run_timeout_ms", &v)) dry_ms = v;
@@ -474,6 +487,12 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   if (enc < -500000 || enc > 500000) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "bad encoder", HTTPD_RESP_USE_STRLEN);
+  }
+  for (int i = 0; i < NUM_VALVES; i++) {
+    if (voff[i] < -500000 || voff[i] > 500000) {
+      httpd_resp_set_status(req, "400 Bad Request");
+      return httpd_resp_send(req, "bad valve_off", HTTPD_RESP_USE_STRLEN);
+    }
   }
   if (f1 < 50 || f1 > 600000) {
     httpd_resp_set_status(req, "400 Bad Request");
@@ -510,6 +529,12 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     return httpd_resp_send(req, "save failed", HTTPD_RESP_USE_STRLEN);
   }
 
+  const esp_err_t err2 = config_save_valve_offsets(voff);
+  if (err2 != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save valve offsets failed", HTTPD_RESP_USE_STRLEN);
+  }
+
   // Сохраняем dry-run в те же NVS-ключи (внутри config_load_* они уже читаются).
   // Здесь пишем напрямую через NVS handle, чтобы не плодить отдельный API.
   if (config) {
@@ -526,9 +551,10 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   // Применяем в рантайме для экрана/логики
   app_config.steps = (uint32_t)steps;
   app_config.encoder = enc;
+  for (int i = 0; i < NUM_VALVES; i++) app_config.valve_offset[i] = voff[i];
   app_state.encoder = enc;
-  app_state.previous_target = steps + enc;
-  app_state.water_target = steps + enc;
+  app_state.previous_target = steps + enc + voff[0];
+  app_state.water_target = steps + enc + voff[0];
 
   return api_config_get_handler(req);
 }

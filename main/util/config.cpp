@@ -22,6 +22,7 @@ int restart_counter = 0;
 // Кэш уставок (загружается в config_init)
 static int32_t s_steps = 1075;          // цель в тиках (250мл по текущей калибровке)
 static int32_t s_encoder = 0;           // смещение в тиках
+static int32_t s_valve_offset[NUM_VALVES] = {0, 0, 0, 0}; // индивидуальные сдвиги по клапанам
 static int32_t s_flush_valve_ms = 1000; // один клапан (мс)
 static int32_t s_flush_all_ms = 2000;   // все клапаны (мс)
 static int32_t s_dry_run_timeout_ms = 3000; // окно контроля "сухого хода" (мс) — по задаче 3 секунды
@@ -36,6 +37,28 @@ void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *
   if (encoder) *encoder = s_encoder;
   if (flush_valve_ms) *flush_valve_ms = s_flush_valve_ms;
   if (flush_all_ms) *flush_all_ms = s_flush_all_ms;
+}
+
+void config_get_cached_valve_offsets(int32_t valve_offset[NUM_VALVES]) {
+  if (!valve_offset) return;
+  for (int i = 0; i < NUM_VALVES; i++) {
+    valve_offset[i] = s_valve_offset[i];
+  }
+}
+
+esp_err_t config_save_valve_offsets(const int32_t valve_offset[NUM_VALVES]) {
+  if (!config) return ESP_ERR_INVALID_STATE;
+  if (!valve_offset) return ESP_ERR_INVALID_ARG;
+
+  for (int i = 0; i < NUM_VALVES; i++) {
+    s_valve_offset[i] = valve_offset[i];
+    char key[20];
+    // valve_off1..valve_offN
+    snprintf(key, sizeof(key), "valve_off%d", i + 1);
+    esp_err_t err = config->set_item(key, s_valve_offset[i]);
+    if (err != ESP_OK) return err;
+  }
+  return config->commit();
 }
 
 void config_get_cached_dry_run(int32_t *dry_run_timeout_ms, int32_t *dry_run_min_ticks) {
@@ -71,6 +94,21 @@ esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *f
     (void)config->set_item("encoder", s_encoder);
   } else {
     ESP_LOGW(CONFIG_TAG, "Error reading encoder: %s", esp_err_to_name(err));
+  }
+
+  // valve_off1..valve_offN (индивидуальные сдвиги)
+  for (int i = 0; i < NUM_VALVES; i++) {
+    char key[20];
+    snprintf(key, sizeof(key), "valve_off%d", i + 1);
+    err = config->get_item(key, tmp);
+    if (err == ESP_OK) {
+      s_valve_offset[i] = tmp;
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+      s_valve_offset[i] = 0;
+      (void)config->set_item(key, s_valve_offset[i]);
+    } else {
+      ESP_LOGW(CONFIG_TAG, "Error reading %s: %s", key, esp_err_to_name(err));
+    }
   }
 
   // flush_valve_ms
