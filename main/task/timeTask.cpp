@@ -25,7 +25,6 @@ TaskHandle_t timeTaskHandle;
 // Переменные для отслеживания времени
 static int last_report_day = -1;
 static bool daily_report_sent = false;
-static int32_t daily_banks_for_report = 0; // Значение дневного счётчика для отчёта
 
 // Функция для синхронизации времени
 static esp_err_t sync_time() {
@@ -91,7 +90,7 @@ static void send_daily_report() {
              "Расход в литрах: %ld\n"
              "Всего налито за всё время: %ld банок",
              timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-             daily_banks_for_report, daily_banks_for_report / 4,
+             app_state.today_banks_count, app_state.today_banks_count / 4,
              app_state.total_banks_count);
     
     // Отправляем как "важное": в основной и дублируем в важный канал
@@ -118,11 +117,6 @@ static void check_daily_reset() {
     // Проверяем, новый ли это день
     if (timeinfo.tm_yday != last_report_day) {
         ESP_LOGI(TIME_TAG, "New day detected: %d, resetting daily report flag", timeinfo.tm_yday);
-        
-        // Сохраняем значение дневного счётчика для отчёта перед сбросом
-        daily_banks_for_report = app_state.today_banks_count;
-        ESP_LOGI(TIME_TAG, "Saved daily banks count for report: %ld", daily_banks_for_report);
-        
         last_report_day = timeinfo.tm_yday;
         daily_report_sent = false;
         
@@ -144,7 +138,6 @@ void timeTask(void *pvParam) {
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     last_report_day = timeinfo.tm_yday;
-    daily_banks_for_report = app_state.today_banks_count; // Инициализируем значение для отчёта
     
     const TickType_t xBlockTime = pdMS_TO_TICKS(TIME_CHECK_INTERVAL_MS);
     
