@@ -54,6 +54,31 @@ static int32_t g_flush_all_ms = 2000;
 static int32_t g_dry_run_timeout_ms = 3000;
 static int32_t g_dry_run_min_ticks = 50;
 
+static inline void refresh_all_valve_targets_from_config();
+
+void counter_reload_runtime_settings() {
+  int32_t steps = 0, enc = 0, flush_valve_ms = 0, flush_all_ms = 0;
+  config_get_cached_pump_settings(&steps, &enc, &flush_valve_ms, &flush_all_ms);
+  if (steps > 0) app_config.steps = (uint32_t)steps;
+  app_config.encoder = enc;
+  app_state.encoder = enc;
+  g_flush_valve_ms = flush_valve_ms;
+  g_flush_all_ms = flush_all_ms;
+
+  int32_t valve_offsets[NUM_VALVES] = {0};
+  config_get_cached_valve_offsets(valve_offsets);
+  for (int i = 0; i < NUM_VALVES; i++) {
+    app_config.valve_offset[i] = valve_offsets[i];
+  }
+
+  int32_t dry_ms = 0, dry_min = 0;
+  config_get_cached_dry_run(&dry_ms, &dry_min);
+  if (dry_ms > 0) g_dry_run_timeout_ms = dry_ms;
+  if (dry_min >= 0) g_dry_run_min_ticks = dry_min;
+
+  refresh_all_valve_targets_from_config();
+}
+
 // Переменная для отслеживания изменений клапанов
 static int32_t last_valve = 0;
 
@@ -61,15 +86,19 @@ static int32_t last_valve = 0;
 static int32_t last_banks_count = 0;
 
 // Массив целей для каждого клапана (пока все одинаковые)
-// 1075 - 250 ml
-static int32_t valve_targets[NUM_VALVES] = {1075, 1075, 1075, 1075};
+static int32_t valve_targets[NUM_VALVES] = {
+    APP_DEFAULT_TARGET_TICKS,
+    APP_DEFAULT_TARGET_TICKS,
+    APP_DEFAULT_TARGET_TICKS,
+    APP_DEFAULT_TARGET_TICKS,
+};
 
 // Переменные для корректировки цели на основе скорости
 static int32_t last_correction_rot = 0;
 static TickType_t last_correction_time = 0;
 #define CORRECTION_INTERVAL 50
 #define PROGRESS_REPORT_INTERVAL 50 // Отправлять отчёт каждые 50 банок
-static const int32_t BASE_TARGET = 1075; // Базовая цель для 250мл
+static const int32_t BASE_TARGET = APP_DEFAULT_TARGET_TICKS; // Базовая цель для 250мл
 static const int32_t TARGET_ML = 250; // Целевой объём в мл
 
 static inline int32_t current_base_target_ticks() {
@@ -159,14 +188,26 @@ static int32_t calculate_correction_ticks(int speed_percent) {
     }
     
     // Получаем текущую базовую цель с учётом энкодера
-    int32_t current_base_target = app_config.steps + app_state.encoder;
+    const int32_t current_base_target = current_base_target_ticks();
+    if (current_base_target <= 0) {
+        ESP_LOGW(COUNTER_TAG, "Speed correction disabled: base target=%ld", (long)current_base_target);
+        return 0;
+    }
+
+    const int32_t correction_steps = current_base_target / CORRECTION_INTERVAL;
+    if (correction_steps <= 0) {
+        ESP_LOGW(COUNTER_TAG,
+                 "Speed correction disabled: base target=%ld is too small for interval=%d",
+                 (long)current_base_target, CORRECTION_INTERVAL);
+        return 0;
+    }
     
     // При скорости 50% target должен быть 988 тиков
     // За 21 корректировку: (current_base_target-988)/21 тиков за корректировку
     // При скорости 50% вычитаем 4 тика за корректировку
     int32_t persent = 88;
     int32_t target_correction = current_base_target * persent / 100;
-    int32_t ticks_per_iteration = (current_base_target - target_correction) / (current_base_target / CORRECTION_INTERVAL);
+    int32_t ticks_per_iteration = (current_base_target - target_correction) / correction_steps;
     
     // Пропорционально для других скоростей (чем больше скорость, тем меньше коррекция)
     float speed_ratio = (100.0f - speed_percent) / 50.0f; // относительно 50%
@@ -186,7 +227,7 @@ static void init_speed_correction_array() {
 // (обработчик GPIO прерывания больше не используется, счёт идёт через PCNT)
 
 app_config_t app_config = {
-    .steps = 1075,
+    .steps = APP_DEFAULT_TARGET_TICKS,
     .encoder = 0,
     .valve_offset = {0, 0, 0, 0},
 };
@@ -203,6 +244,12 @@ void counterTask(void *pvParam) {
   int32_t tick_min_us = 0;
   int32_t tick_pull = 0; // 0=OFF, 1=UP, 2=DOWN
   config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
+  if (tick_pull == 0) {
+    // Для большинства датчиков расхода (открытый коллектор / Hall) безопаснее держать линию подтянутой вверх,
+    // чтобы вход не "плавал" на длинном проводе.
+    tick_pull = 1;
+    ESP_LOGW(COUNTER_TAG, "DI pull mode not configured, forcing PULL-UP");
+  }
 
   // Настройка debounce для GPIO ISR: переводим микросекунды в такты CPU (делаем это НЕ в ISR).
   // tick_min_interval_us = 0 -> debounce выключен.
@@ -325,6 +372,15 @@ void counterTask(void *pvParam) {
   uint32_t i = 0;
   uint32_t notification;
   refresh_all_valve_targets_from_config();
+  ESP_LOGW(COUNTER_TAG,
+           "Initial target: base=%ld encoder=%ld target_p1=%ld offsets=[%ld,%ld,%ld,%ld]",
+           (long)app_config.steps,
+           (long)app_state.encoder,
+           (long)valve_targets[0],
+           (long)app_config.valve_offset[0],
+           (long)app_config.valve_offset[1],
+           (long)app_config.valve_offset[2],
+           (long)app_config.valve_offset[3]);
   
   // Инициализируем массив коррекций скоростей
   init_speed_correction_array();
@@ -667,11 +723,9 @@ void counterTask(void *pvParam) {
         ioexp_set_pump(false);
       }
       if (notification & ENCODER_CHANGED_BIT) {
+        app_config.encoder = app_state.encoder;
         refresh_all_valve_targets_from_config();
         
-        // app_config.encoder = app_state.encoder;
-        // config->set_item("steps", app_config.encoder);
-        // config->commit();
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
         ESP_LOGW(COUNTER_TAG, "Encoder changed: %ld", app_state.encoder);
         
@@ -693,6 +747,14 @@ void counterTask(void *pvParam) {
       TickType_t now = xTaskGetTickCount();
       if (now - encoder_change_last_time >= ENCODER_REPORT_SILENCE) {
         encoder_change_pending = false;
+        const esp_err_t save_err = config_save_pump_settings(
+            (int32_t)app_config.steps,
+            app_config.encoder,
+            g_flush_valve_ms,
+            g_flush_all_ms);
+        if (save_err != ESP_OK) {
+          ESP_LOGE(COUNTER_TAG, "Failed to save encoder to NVS: %s", esp_err_to_name(save_err));
+        }
         char message[256];
         snprintf(message, sizeof(message),
                  "Изменена уставка наливайки:\n"

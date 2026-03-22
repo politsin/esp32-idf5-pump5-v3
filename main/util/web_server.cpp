@@ -535,26 +535,20 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     return httpd_resp_send(req, "save valve offsets failed", HTTPD_RESP_USE_STRLEN);
   }
 
-  // Сохраняем dry-run в те же NVS-ключи (внутри config_load_* они уже читаются).
-  // Здесь пишем напрямую через NVS handle, чтобы не плодить отдельный API.
-  if (config) {
-    (void)config->set_item("dry_run_timeout_ms", dry_ms);
-    (void)config->set_item("dry_run_min_ticks", dry_min);
-    (void)config->set_item("tick_source", tick_source);
-    (void)config->set_item("tick_min_interval_us", tick_min_us);
-    (void)config->set_item("tick_pull", tick_pull);
-    (void)config->commit();
-    // Обновим кэш, чтобы GET /api/config сразу отдал актуальные значения
-    (void)config_load_pump_settings(nullptr, nullptr, nullptr, nullptr);
+  const esp_err_t err3 = config_save_dry_run(dry_ms, dry_min);
+  if (err3 != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save dry_run failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  const esp_err_t err4 = config_save_tick_counter(tick_source, tick_min_us, tick_pull);
+  if (err4 != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save tick config failed", HTTPD_RESP_USE_STRLEN);
   }
 
   // Применяем в рантайме для экрана/логики
-  app_config.steps = (uint32_t)steps;
-  app_config.encoder = enc;
-  for (int i = 0; i < NUM_VALVES; i++) app_config.valve_offset[i] = voff[i];
-  app_state.encoder = enc;
-  app_state.previous_target = steps + enc + voff[0];
-  app_state.water_target = steps + enc + voff[0];
+  counter_reload_runtime_settings();
 
   return api_config_get_handler(req);
 }
@@ -1022,5 +1016,4 @@ esp_err_t web_server_start(void) {
   ESP_LOGI(TAG, "Web server started on :80 (no auth)");
   return ESP_OK;
 }
-
 

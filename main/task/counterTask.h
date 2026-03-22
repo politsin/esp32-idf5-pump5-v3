@@ -10,4 +10,5 @@ static constexpr gpio_num_t COUNTER_TICK_GPIO = GPIO_NUM_26;
 
 extern TaskHandle_t counter;
 void counterTask(void *pvParam);
+void counter_reload_runtime_settings();
 
