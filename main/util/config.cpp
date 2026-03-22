@@ -32,6 +32,11 @@ static int32_t s_tick_source = 1;           // 0=PCNT, 1=GPIO ISR + debounce (п
 static int32_t s_tick_min_interval_us = 0; // debounce выключен (считаем каждое прерывание)
 static int32_t s_tick_pull = 1;            // 0=OFF, 1=PULL-UP, 2=PULL-DOWN (по умолчанию PULL-UP)
 
+// NVS ограничивает длину имени ключа 15 символами.
+static constexpr const char *NVS_KEY_DRY_RUN_TIMEOUT_MS = "dry_ms";
+static constexpr const char *NVS_KEY_DRY_RUN_MIN_TICKS = "dry_min";
+static constexpr const char *NVS_KEY_TICK_MIN_INTERVAL_US = "tick_min_us";
+
 void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
   if (steps) *steps = s_steps;
   if (encoder) *encoder = s_encoder;
@@ -72,9 +77,9 @@ esp_err_t config_save_dry_run(int32_t dry_run_timeout_ms, int32_t dry_run_min_ti
   s_dry_run_timeout_ms = dry_run_timeout_ms;
   s_dry_run_min_ticks = dry_run_min_ticks;
 
-  esp_err_t err = config->set_item("dry_run_timeout_ms", s_dry_run_timeout_ms);
+  esp_err_t err = config->set_item(NVS_KEY_DRY_RUN_TIMEOUT_MS, s_dry_run_timeout_ms);
   if (err != ESP_OK) return err;
-  err = config->set_item("dry_run_min_ticks", s_dry_run_min_ticks);
+  err = config->set_item(NVS_KEY_DRY_RUN_MIN_TICKS, s_dry_run_min_ticks);
   if (err != ESP_OK) return err;
 
   return config->commit();
@@ -95,7 +100,7 @@ esp_err_t config_save_tick_counter(int32_t tick_source, int32_t tick_min_interva
 
   esp_err_t err = config->set_item("tick_source", s_tick_source);
   if (err != ESP_OK) return err;
-  err = config->set_item("tick_min_interval_us", s_tick_min_interval_us);
+  err = config->set_item(NVS_KEY_TICK_MIN_INTERVAL_US, s_tick_min_interval_us);
   if (err != ESP_OK) return err;
   err = config->set_item("tick_pull", s_tick_pull);
   if (err != ESP_OK) return err;
@@ -170,19 +175,19 @@ esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *f
   }
 
   // dry_run_timeout_ms
-  err = config->get_item("dry_run_timeout_ms", tmp);
+  err = config->get_item(NVS_KEY_DRY_RUN_TIMEOUT_MS, tmp);
   if (err == ESP_OK) s_dry_run_timeout_ms = tmp;
   else if (err == ESP_ERR_NVS_NOT_FOUND) {
-    (void)config->set_item("dry_run_timeout_ms", s_dry_run_timeout_ms);
+    (void)config->set_item(NVS_KEY_DRY_RUN_TIMEOUT_MS, s_dry_run_timeout_ms);
   } else {
     ESP_LOGW(CONFIG_TAG, "Error reading dry_run_timeout_ms: %s", esp_err_to_name(err));
   }
 
   // dry_run_min_ticks
-  err = config->get_item("dry_run_min_ticks", tmp);
+  err = config->get_item(NVS_KEY_DRY_RUN_MIN_TICKS, tmp);
   if (err == ESP_OK) s_dry_run_min_ticks = tmp;
   else if (err == ESP_ERR_NVS_NOT_FOUND) {
-    (void)config->set_item("dry_run_min_ticks", s_dry_run_min_ticks);
+    (void)config->set_item(NVS_KEY_DRY_RUN_MIN_TICKS, s_dry_run_min_ticks);
   } else {
     ESP_LOGW(CONFIG_TAG, "Error reading dry_run_min_ticks: %s", esp_err_to_name(err));
   }
@@ -197,10 +202,10 @@ esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *f
   }
 
   // tick_min_interval_us
-  err = config->get_item("tick_min_interval_us", tmp);
+  err = config->get_item(NVS_KEY_TICK_MIN_INTERVAL_US, tmp);
   if (err == ESP_OK) s_tick_min_interval_us = tmp;
   else if (err == ESP_ERR_NVS_NOT_FOUND) {
-    (void)config->set_item("tick_min_interval_us", s_tick_min_interval_us);
+    (void)config->set_item(NVS_KEY_TICK_MIN_INTERVAL_US, s_tick_min_interval_us);
   } else {
     ESP_LOGW(CONFIG_TAG, "Error reading tick_min_interval_us: %s", esp_err_to_name(err));
   }

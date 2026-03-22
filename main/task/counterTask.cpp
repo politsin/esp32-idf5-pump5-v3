@@ -1,230 +1,77 @@
 // #include <counterTask.h> WTF o.O
 // Counter #22 #19.
 #include "counterTask.h"
-#include "driver/gpio.h"
-#include "driver/pulse_cnt.h"
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "esp_cpu.h"
-#include "esp_rom_sys.h"
-typedef gpio_num_t Pintype;
-static constexpr Pintype DI = COUNTER_TICK_GPIO;
-static constexpr Pintype PUMP = GPIO_NUM_25;
-// Клапаны перенесены на PCF8575 (P0..P4), GPIO больше не используются
-#include "sdkconfig.h"
+
 #include <config.h>
 #include <esp_log.h>
 #include <main.h>
-#include <rom/gpio.h>
-#define COUNTER_TAG "COUNTER"
 
 #include "../util/pcf8575_io.h"
+#include "counter_cycle.h"
+#include "counter_flush.h"
+#include "counter_targets.h"
+#include "counter_ticks.h"
 #include "task/screenTask.h"
 #include "telegram_manager.h"
+
+#define COUNTER_TAG "COUNTER"
+
 TaskHandle_t counter;
 
-// Объявляем счетчик как глобальную переменную
-static volatile int32_t rot = 0;
-
-static volatile bool pumpOn = false;
-static volatile bool valve1On = false;
-static volatile bool valve2On = false;
-static volatile bool valve3On = false;
-static volatile bool valve4On = false;
-
-// Переменные для отслеживания времени клапанов
-static volatile TickType_t valve_start_time = 0;
-static int32_t current_valve = 0;
-
-// Массив для времени работы клапанов (обновляется в ISR)
-static volatile TickType_t valve_work_times[NUM_VALVES] = {0, 0, 0, 0};
-
-static TickType_t pump_start_time = 0; // Время старта помпы для защиты
-static int32_t pump_start_counter = 0; // Значение счётчика при старте помпы
-
-// Флаг для отправки предупреждения о сухом ходе
-static bool warning_sent = false;
-
-// Флаг режима промывки
+static int32_t rot = 0;
+static bool pumpOn = false;
+static TickType_t valve_start_time = 0;
+static TickType_t valve_work_times[NUM_VALVES] = {0, 0, 0, 0};
+static TickType_t pump_start_time = 0;
+static int32_t pump_start_counter = 0;
 static bool flush_mode = false;
-
-// Тайминги промывки (мс) — берём из NVS (config.cpp кэширует значения)
-static int32_t g_flush_valve_ms = 1000;
-static int32_t g_flush_all_ms = 2000;
-static int32_t g_dry_run_timeout_ms = 3000;
-static int32_t g_dry_run_min_ticks = 50;
-
-static inline void refresh_all_valve_targets_from_config();
-
-void counter_reload_runtime_settings() {
-  int32_t steps = 0, enc = 0, flush_valve_ms = 0, flush_all_ms = 0;
-  config_get_cached_pump_settings(&steps, &enc, &flush_valve_ms, &flush_all_ms);
-  if (steps > 0) app_config.steps = (uint32_t)steps;
-  app_config.encoder = enc;
-  app_state.encoder = enc;
-  g_flush_valve_ms = flush_valve_ms;
-  g_flush_all_ms = flush_all_ms;
-
-  int32_t valve_offsets[NUM_VALVES] = {0};
-  config_get_cached_valve_offsets(valve_offsets);
-  for (int i = 0; i < NUM_VALVES; i++) {
-    app_config.valve_offset[i] = valve_offsets[i];
-  }
-
-  int32_t dry_ms = 0, dry_min = 0;
-  config_get_cached_dry_run(&dry_ms, &dry_min);
-  if (dry_ms > 0) g_dry_run_timeout_ms = dry_ms;
-  if (dry_min >= 0) g_dry_run_min_ticks = dry_min;
-
-  refresh_all_valve_targets_from_config();
-}
-
-// Переменная для отслеживания изменений клапанов
+static int32_t current_valve = 0;
 static int32_t last_valve = 0;
-
-// Переменная для отслеживания последнего сохранённого количества банок
 static int32_t last_banks_count = 0;
-
-// Массив целей для каждого клапана (пока все одинаковые)
 static int32_t valve_targets[NUM_VALVES] = {
     APP_DEFAULT_TARGET_TICKS,
     APP_DEFAULT_TARGET_TICKS,
     APP_DEFAULT_TARGET_TICKS,
     APP_DEFAULT_TARGET_TICKS,
 };
-
-// Переменные для корректировки цели на основе скорости
-static int32_t last_correction_rot = 0;
-static TickType_t last_correction_time = 0;
-#define CORRECTION_INTERVAL 50
-#define PROGRESS_REPORT_INTERVAL 50 // Отправлять отчёт каждые 50 банок
-static const int32_t BASE_TARGET = APP_DEFAULT_TARGET_TICKS; // Базовая цель для 250мл
-static const int32_t TARGET_ML = 250; // Целевой объём в мл
-
-static inline int32_t current_base_target_ticks() {
-  return (int32_t)app_config.steps + (int32_t)app_state.encoder;
-}
-
-static inline int32_t current_valve_nominal_target_ticks(int valve_idx0) {
-  if (valve_idx0 < 0) valve_idx0 = 0;
-  if (valve_idx0 >= NUM_VALVES) valve_idx0 = NUM_VALVES - 1;
-  return current_base_target_ticks() + (int32_t)app_config.valve_offset[valve_idx0];
-}
-
-static inline void refresh_valve_target_from_config(int valve_idx0) {
-  if (valve_idx0 < 0) valve_idx0 = 0;
-  if (valve_idx0 >= NUM_VALVES) valve_idx0 = NUM_VALVES - 1;
-  const int32_t t = current_valve_nominal_target_ticks(valve_idx0);
-  valve_targets[valve_idx0] = t;
-  // Для UI: показываем уставку текущего канала/клапана (без учёта коррекции скорости)
-  app_state.previous_target = t;
-  app_state.water_target = t;
-}
-
-static inline void refresh_all_valve_targets_from_config() {
-  const int32_t base = current_base_target_ticks();
-  for (int i = 0; i < NUM_VALVES; i++) {
-    valve_targets[i] = base + (int32_t)app_config.valve_offset[i];
-  }
-  // Для UI: показываем уставку текущего клапана (если известен), иначе P1
-  const int idx0 = (current_valve >= 1 && current_valve <= NUM_VALVES) ? (current_valve - 1) : 0;
-  app_state.previous_target = valve_targets[idx0];
-  app_state.water_target = valve_targets[idx0];
-}
-
-// Простая линейная экстраполяция по двум точкам
-static const float NORMAL_TIME = 7.0f;    // Нормальное время (7 сек)
-static const float SLOW_TIME = 15.0f;     // Медленное время (15 сек)
-static const float NORMAL_ML = 250.0f;    // Нормальный объём (250мл)
-static const float SLOW_ML = 272.0f;      // Объём при медленной скорости (272мл)
-
-#define NORMAL_SPEED_ML_PER_SECOND (TARGET_ML / NORMAL_TIME) // 250/7 ≈ 35.7 мл/с
-
-// Глобальные переменные для накопления перелитых тиков
 static int32_t accumulated_overpoured_ticks[NUM_VALVES] = {0, 0, 0, 0};
-
-// Массив предварительно рассчитанных тиков коррекции для скоростей от 30% до 100%
-static int32_t speed_correction_ticks[71]; // 71 элемент: от 30% до 100%
-
-// Отложенная отправка сообщения об изменении уставки (антиспам)
-static volatile bool encoder_change_pending = false;
+static bool encoder_change_pending = false;
 static TickType_t encoder_change_last_time = 0;
-static const TickType_t ENCODER_REPORT_SILENCE = pdMS_TO_TICKS(700); // пауза без новых изменений
+static const TickType_t ENCODER_REPORT_SILENCE = pdMS_TO_TICKS(700);
 
-// Флаг и параметры переключения клапанов, выполняются в задаче (не в ISR)
-static volatile int pending_close_valve = 0;
-static volatile int pending_open_valve = 0;
-static volatile bool valve_switch_pending = false;
-static volatile int32_t last_logged_rot = -1;     // для "в лоб" логирования тиков
-static volatile int32_t gpio_ticks_pending = 0;   // тики, накопленные GPIO ISR
-static portMUX_TYPE s_gpio_ticks_mux = portMUX_INITIALIZER_UNLOCKED;
-static volatile uint32_t s_tick_min_cycles = 0;   // debounce в тактах CPU (0 = выключен)
-static volatile uint32_t s_tick_last_cycle = 0;   // последний принятый тик (cycle_count)
+static int pending_close_valve = 0;
+static int pending_open_valve = 0;
+static bool valve_switch_pending = false;
 
-static void IRAM_ATTR counter_gpio_isr(void* arg) {
-  (void)arg;
-  portENTER_CRITICAL_ISR(&s_gpio_ticks_mux);
-  // Дребезг/шум: отсекаем импульсы чаще, чем tick_min_interval_us (если задан)
-  if (s_tick_min_cycles != 0) {
-    const uint32_t now = esp_cpu_get_cycle_count();
-    const uint32_t dt = (uint32_t)(now - s_tick_last_cycle);
-    if (dt < s_tick_min_cycles) {
-      portEXIT_CRITICAL_ISR(&s_gpio_ticks_mux);
-      return;
-    }
-    s_tick_last_cycle = now;
-  }
-  gpio_ticks_pending = gpio_ticks_pending + 1;
-  portEXIT_CRITICAL_ISR(&s_gpio_ticks_mux);
-}
+static CounterRuntimeSettings g_runtime = {
+    .flush_valve_ms = 1000,
+    .flush_all_ms = 2000,
+    .dry_run_timeout_ms = 3000,
+    .dry_run_min_ticks = 50,
+};
+
 #ifndef VALVE_SWITCH_BIT
 #define VALVE_SWITCH_BIT (1UL << 29)
 #endif
 
-// Функция для расчёта тиков коррекции на основе процента скорости
-static int32_t calculate_correction_ticks(int speed_percent) {
-    if (speed_percent >= 100) {
-        return 0; // Нормальная скорость - без коррекции
-    }
-    
-    // Получаем текущую базовую цель с учётом энкодера
-    const int32_t current_base_target = current_base_target_ticks();
-    if (current_base_target <= 0) {
-        ESP_LOGW(COUNTER_TAG, "Speed correction disabled: base target=%ld", (long)current_base_target);
-        return 0;
-    }
-
-    const int32_t correction_steps = current_base_target / CORRECTION_INTERVAL;
-    if (correction_steps <= 0) {
-        ESP_LOGW(COUNTER_TAG,
-                 "Speed correction disabled: base target=%ld is too small for interval=%d",
-                 (long)current_base_target, CORRECTION_INTERVAL);
-        return 0;
-    }
-    
-    // При скорости 50% target должен быть 988 тиков
-    // За 21 корректировку: (current_base_target-988)/21 тиков за корректировку
-    // При скорости 50% вычитаем 4 тика за корректировку
-    int32_t persent = 88;
-    int32_t target_correction = current_base_target * persent / 100;
-    int32_t ticks_per_iteration = (current_base_target - target_correction) / correction_steps;
-    
-    // Пропорционально для других скоростей (чем больше скорость, тем меньше коррекция)
-    float speed_ratio = (100.0f - speed_percent) / 50.0f; // относительно 50%
-    return (int32_t)(ticks_per_iteration * speed_ratio);
+void counter_reload_runtime_settings() {
+  counter_targets_reload_runtime_settings(app_config, app_state, valve_targets, current_valve,
+                                          accumulated_overpoured_ticks, g_runtime);
 }
 
-// Функция для заполнения массива коррекций при старте
-static void init_speed_correction_array() {
-    ESP_LOGW(COUNTER_TAG, "Initializing speed correction array:");
-    for (int speed = 30; speed <= 100; speed++) {
-        int32_t correction = calculate_correction_ticks(speed);
-        speed_correction_ticks[speed - 30] = correction;
-        // ESP_LOGW(COUNTER_TAG, "Speed %d%% -> correction %ld ticks", speed, correction);
-    }
-}
+static void sync_bank_counters_to_current_run() {
+  if (app_state.banks_count <= last_banks_count) return;
 
-// (обработчик GPIO прерывания больше не используется, счёт идёт через PCNT)
+  const int32_t delta = app_state.banks_count - last_banks_count;
+  app_state.total_banks_count += delta;
+  app_state.today_banks_count += delta;
+  save_total_banks_count(app_state.total_banks_count);
+  save_today_banks_count(app_state.today_banks_count);
+  last_banks_count = app_state.banks_count;
+}
 
 app_config_t app_config = {
     .steps = APP_DEFAULT_TARGET_TICKS,
@@ -233,145 +80,25 @@ app_config_t app_config = {
 };
 
 void counterTask(void *pvParam) {
-
   // Помпа через PCF8575
   ioexp_set_pump(false);
   // Все клапаны выключены через PCF8575
   ioexp_set_all_valves(false);
-
-  // Настройки счётчика тиков (DI) из NVS (кэш)
-  int32_t tick_source = 1; // 0=PCNT, 1=GPIO ISR + debounce
-  int32_t tick_min_us = 0;
-  int32_t tick_pull = 0; // 0=OFF, 1=UP, 2=DOWN
-  config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
-  if (tick_pull == 0) {
-    // Для большинства датчиков расхода (открытый коллектор / Hall) безопаснее держать линию подтянутой вверх,
-    // чтобы вход не "плавал" на длинном проводе.
-    tick_pull = 1;
-    ESP_LOGW(COUNTER_TAG, "DI pull mode not configured, forcing PULL-UP");
-  }
-
-  // Настройка debounce для GPIO ISR: переводим микросекунды в такты CPU (делаем это НЕ в ISR).
-  // tick_min_interval_us = 0 -> debounce выключен.
-  if (tick_min_us < 0) tick_min_us = 0;
-  if (tick_min_us > 500000) tick_min_us = 500000;
-  const uint32_t cycles_per_us = (uint32_t)esp_rom_get_cpu_ticks_per_us();
-  portENTER_CRITICAL(&s_gpio_ticks_mux);
-  s_tick_min_cycles = (tick_min_us > 0 && cycles_per_us > 0) ? ((uint32_t)tick_min_us * cycles_per_us) : 0U;
-  s_tick_last_cycle = 0;
-  portEXIT_CRITICAL(&s_gpio_ticks_mux);
-
-  // Настраиваем вход DI.
-  // Для датчиков расхода (Hall) часто нужен pull-up, но он может усиливать наводки на длинных проводах.
-  // Поэтому делаем это настраиваемым через NVS/web: tick_pull (0/1/2).
-  gpio_config_t di_config = {
-      .pin_bit_mask = (1ULL << DI),
-      .mode = GPIO_MODE_INPUT,
-      .pull_up_en = (tick_pull == 1) ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-      .pull_down_en = (tick_pull == 2) ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE
-  };
-  gpio_config(&di_config);
-
-  // Создаём юнит PCNT (если выбран PCNT)
-  static pcnt_unit_handle_t pcnt_unit = NULL;
-  static pcnt_channel_handle_t pcnt_chan = NULL;
-  bool pcnt_ready = false;
-  if (tick_source == 0) {
-    pcnt_ready = true;
-    pcnt_unit_config_t unit_cfg = {
-        .low_limit = -32768,
-        .high_limit = 32767,
-        .intr_priority = 0,
-        .flags = {}
-    };
-    if (pcnt_new_unit(&unit_cfg, &pcnt_unit) != ESP_OK) {
-      pcnt_ready = false;
-    }
-    // Антидребезг PCNT: увеличим до 10 мкс (часто помогает от наводок)
-    pcnt_glitch_filter_config_t filter_cfg = {
-        .max_glitch_ns = 10000, // 10 мкс
-    };
-    if (pcnt_ready) {
-      esp_err_t fe = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_cfg);
-      if (fe != ESP_OK && fe != ESP_ERR_NOT_SUPPORTED) {
-        pcnt_ready = false;
-      }
-    }
-    // Канал: считаем по спадающему фронту (датчик тянет к GND)
-    pcnt_chan_config_t chan_cfg = {
-        .edge_gpio_num = DI,
-        .level_gpio_num = -1,
-        .flags = {}
-    };
-    if (pcnt_ready && pcnt_new_channel(pcnt_unit, &chan_cfg, &pcnt_chan) != ESP_OK) {
-      pcnt_ready = false;
-    }
-    if (pcnt_ready && pcnt_channel_set_edge_action(
-          pcnt_chan,
-          PCNT_CHANNEL_EDGE_ACTION_HOLD,      // фронт вверх игнорируем
-          PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK) { // считаем по фронту вниз
-      pcnt_ready = false;
-    }
-    if (pcnt_ready && pcnt_channel_set_level_action(
-          pcnt_chan,
-          PCNT_CHANNEL_LEVEL_ACTION_KEEP,
-          PCNT_CHANNEL_LEVEL_ACTION_KEEP) != ESP_OK) {
-      pcnt_ready = false;
-    }
-    if (pcnt_ready) {
-      pcnt_unit_enable(pcnt_unit);
-      pcnt_unit_clear_count(pcnt_unit);
-      pcnt_unit_start(pcnt_unit);
-    }
-  }
-
-  if (!pcnt_ready) {
-    // GPIO ISR (либо выбран вручную, либо PCNT не поднялся)
-    esp_err_t isr_res = gpio_install_isr_service(0);
-    if (isr_res != ESP_OK && isr_res != ESP_ERR_INVALID_STATE) {
-      // продолжаем, даже если сервис уже установлен
-    }
-    // Считаем по спадающему фронту (датчик тянет к GND)
-    gpio_set_intr_type(DI, GPIO_INTR_NEGEDGE);
-    (void)gpio_isr_handler_remove(DI);
-    gpio_isr_handler_add(DI, counter_gpio_isr, NULL);
-    gpio_intr_enable(DI);
-    ESP_LOGW(COUNTER_TAG, "Ticks: source=GPIO_ISR (NEGEDGE) debounce_us=%ld",
-             (long)tick_min_us);
-  } else {
-    ESP_LOGW(COUNTER_TAG, "Ticks: source=PCNT (glitch_filter_ns=10000)");
-  }
+  CounterTickSource tick_source = {};
+  counter_ticks_init(tick_source);
   const TickType_t xBlockTime = pdMS_TO_TICKS(50);
-
-  // Уставки из NVS (через config.cpp кэш)
-  {
-    int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
-    config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
-    if (steps > 0) app_config.steps = (uint32_t)steps;
-    app_config.encoder = enc;
-    int32_t voff[NUM_VALVES] = {0};
-    config_get_cached_valve_offsets(voff);
-    for (int i = 0; i < NUM_VALVES; i++) app_config.valve_offset[i] = voff[i];
-    // Важно: app_state.encoder — это смещение, которое участвует в расчёте цели.
-    app_state.encoder = app_config.encoder;
-    g_flush_valve_ms = (f1 > 0) ? f1 : g_flush_valve_ms;
-    g_flush_all_ms = (f2 > 0) ? f2 : g_flush_all_ms;
-    int32_t dms = 0, dmin = 0;
-    config_get_cached_dry_run(&dms, &dmin);
-    if (dms > 0) g_dry_run_timeout_ms = dms;
-    if (dmin >= 0) g_dry_run_min_ticks = dmin;
-  }
+  counter_reload_runtime_settings();
   ESP_LOGW(COUNTER_TAG, "Settings: steps=%lu encoder=%ld flush_valve_ms=%ld flush_all_ms=%ld",
-           (unsigned long)app_config.steps, (long)app_state.encoder, (long)g_flush_valve_ms, (long)g_flush_all_ms);
+           (unsigned long)app_config.steps, (long)app_state.encoder,
+           (long)g_runtime.flush_valve_ms, (long)g_runtime.flush_all_ms);
   ESP_LOGW(COUNTER_TAG, "Dry-run protection: timeout_ms=%ld min_ticks=%ld",
-           (long)g_dry_run_timeout_ms, (long)g_dry_run_min_ticks);
+           (long)g_runtime.dry_run_timeout_ms, (long)g_runtime.dry_run_min_ticks);
 
-  // Variables for timing
   bool isOn = false;
   uint32_t i = 0;
   uint32_t notification;
-  refresh_all_valve_targets_from_config();
+  counter_targets_refresh_all(app_config, app_state, accumulated_overpoured_ticks,
+                              current_valve, valve_targets);
   ESP_LOGW(COUNTER_TAG,
            "Initial target: base=%ld encoder=%ld target_p1=%ld offsets=[%ld,%ld,%ld,%ld]",
            (long)app_config.steps,
@@ -382,116 +109,47 @@ void counterTask(void *pvParam) {
            (long)app_config.valve_offset[2],
            (long)app_config.valve_offset[3]);
   
-  // Инициализируем массив коррекций скоростей
-  init_speed_correction_array();
-
   while (true) {
-    // Забираем накопленные тики из GPIO ISR (если активен ISR-режим)
-    int32_t pending_ticks = 0;
-    portENTER_CRITICAL(&s_gpio_ticks_mux);
-    pending_ticks = gpio_ticks_pending;
-    gpio_ticks_pending = 0;
-    portEXIT_CRITICAL(&s_gpio_ticks_mux);
+    int32_t pending_ticks = counter_ticks_take_pending_gpio();
     if (pending_ticks > 0) {
       rot += pending_ticks;
       app_state.water_current = rot;
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
     }
 
-    // Считываем импульсы с PCNT и обновляем счётчик воды
-    int pcnt_val = 0;
-    if (pcnt_ready && pcnt_unit_get_count(pcnt_unit, &pcnt_val) == ESP_OK && pcnt_val != 0) {
-      pcnt_unit_clear_count(pcnt_unit);
-      rot += (int32_t)pcnt_val;
+    int32_t pcnt_ticks = 0;
+    if (counter_ticks_try_take_pcnt(tick_source, pcnt_ticks)) {
+      rot += pcnt_ticks;
       app_state.water_current = rot;
-      // Обновляем экран сразу при изменении счётчика
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
-      // Проверяем достижение цели и переключение клапанов (перенесено из ISR)
-      if (pumpOn && !flush_mode) {
-        int32_t target = valve_targets[current_valve - 1];
-        if (rot >= target) {
-          TickType_t current_time = xTaskGetTickCount();
-          TickType_t valve_time = current_time - valve_start_time;
-          app_state.valve_times[current_valve - 1] = valve_time;
-          valve_work_times[current_valve - 1] = valve_time;
-          valve_start_time = current_time;
-          pending_close_valve = current_valve;
-          current_valve++;
-          if (current_valve > NUM_VALVES) current_valve = 1;
-          app_state.valve = current_valve;
-          app_state.banks_count++;
-          pending_open_valve = current_valve;
-          valve_switch_pending = true;
-          xTaskNotify(counter, VALVE_SWITCH_BIT, eSetBits);
-          if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
-            xTaskNotify(counter, PROGRESS_REPORT_BIT, eSetBits);
-          }
-          rot = 0;
-          pump_start_counter = 0;
-          pump_start_time = xTaskGetTickCount();
-          last_correction_rot = 0;
-          last_correction_time = xTaskGetTickCount();
-          refresh_valve_target_from_config(current_valve - 1);
-          accumulated_overpoured_ticks[current_valve - 1] = 0;
-          xTaskNotify(screen, UPDATE_BIT, eSetBits);
-        } else {
-          if (rot == 0) {
-            refresh_valve_target_from_config(current_valve - 1);
-          }
-        }
-      }
-    } else if (!pcnt_ready && rot > 0) {
-      // Фоллбэк путь: рост rot происходит в GPIO ISR
+      counter_process_tick_progress(rot, pumpOn, flush_mode, current_valve, valve_start_time,
+                                    valve_work_times, pump_start_time, pump_start_counter,
+                                    valve_targets, accumulated_overpoured_ticks,
+                                    pending_close_valve, pending_open_valve,
+                                    valve_switch_pending, counter);
+      counter_targets_refresh_one(app_config, app_state, accumulated_overpoured_ticks,
+                                  current_valve - 1, valve_targets);
+      xTaskNotify(screen, UPDATE_BIT, eSetBits);
+    } else if (!tick_source.pcnt_ready && rot > 0) {
       app_state.water_current = rot;
-      // Обновляем экран сразу при изменении счётчика
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
-      if (pumpOn && !flush_mode) {
-        int32_t target = valve_targets[current_valve - 1];
-        if (rot >= target) {
-          TickType_t current_time = xTaskGetTickCount();
-          TickType_t valve_time = current_time - valve_start_time;
-          app_state.valve_times[current_valve - 1] = valve_time;
-          valve_work_times[current_valve - 1] = valve_time;
-          valve_start_time = current_time;
-          pending_close_valve = current_valve;
-          current_valve++;
-          if (current_valve > NUM_VALVES) current_valve = 1;
-          app_state.valve = current_valve;
-          app_state.banks_count++;
-          pending_open_valve = current_valve;
-          valve_switch_pending = true;
-          xTaskNotify(counter, VALVE_SWITCH_BIT, eSetBits);
-          if (app_state.banks_count % PROGRESS_REPORT_INTERVAL == 0) {
-            xTaskNotify(counter, PROGRESS_REPORT_BIT, eSetBits);
-          }
-          rot = 0;
-          pump_start_counter = 0;
-          pump_start_time = xTaskGetTickCount();
-          last_correction_rot = 0;
-          last_correction_time = xTaskGetTickCount();
-          refresh_valve_target_from_config(current_valve - 1);
-          accumulated_overpoured_ticks[current_valve - 1] = 0;
-          xTaskNotify(screen, UPDATE_BIT, eSetBits);
-        }
-      }
+      counter_process_tick_progress(rot, pumpOn, flush_mode, current_valve, valve_start_time,
+                                    valve_work_times, pump_start_time, pump_start_counter,
+                                    valve_targets, accumulated_overpoured_ticks,
+                                    pending_close_valve, pending_open_valve,
+                                    valve_switch_pending, counter);
+      counter_targets_refresh_one(app_config, app_state, accumulated_overpoured_ticks,
+                                  current_valve - 1, valve_targets);
+      xTaskNotify(screen, UPDATE_BIT, eSetBits);
     }
     if (xTaskNotifyWait(0x0, ULONG_MAX, &notification, 0) ==
         pdTRUE) { // Wait for any notification
       if (notification & RESET_TICKS_BIT) {
-        // Сброс тиков через веб (делаем в контексте задачи, чтобы безопасно почистить PCNT/GPIO state)
         rot = 0;
         app_state.water_current = 0;
         app_state.water_delta = 0;
         pump_start_counter = 0;
-        // Сброс накопленных тиков из ISR
-        portENTER_CRITICAL(&s_gpio_ticks_mux);
-        gpio_ticks_pending = 0;
-        s_tick_last_cycle = 0;
-        portEXIT_CRITICAL(&s_gpio_ticks_mux);
-        // Сброс PCNT, если активен
-        if (pcnt_ready && pcnt_unit) {
-          (void)pcnt_unit_clear_count(pcnt_unit);
-        }
+        counter_ticks_reset(tick_source);
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
       }
       if (notification & VALVE_SWITCH_BIT) {
@@ -508,139 +166,8 @@ void counterTask(void *pvParam) {
         }
       }
       if (notification & BTN_FLUSH_BIT) {
-        // Промывка возможна только из состояния idle (после остановки)
-        if (isOn || app_state.start_time > 0) {
-          ESP_LOGW(COUNTER_TAG, "Flush rejected: system is running. Stop first!");
-          continue;
-        }
-        
-        ESP_LOGW(COUNTER_TAG, "Flush started!");
-        
-        // Включаем режим промывки
-        flush_mode = true;
-        
-        // Включаем помпу
-        ioexp_set_pump(true);
-        isOn = true;
-        pumpOn = true;
-        app_state.is_on = isOn;
-        app_state.valve = 0; // Специальное значение для отображения всех клапанов
-        
-        // СРАЗУ открываем все клапаны в самом начале
-        ioexp_set_all_valves(true);
-        app_state.valve = 0; // Специальное значение для отображения всех клапанов
-        xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-        
-        // Делаем 2 круга: каждый клапан на g_flush_valve_ms миллисекунд
-        for (int round = 0; round < 2; round++) {
-          for (int valve = 1; valve <= NUM_VALVES; valve++) {
-            // Проверяем STOP каждые 100мс
-            uint32_t stop_check = 0;
-            if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
-              if (stop_check & BTN_STOP_BIT) {
-                ESP_LOGW(COUNTER_TAG, "STOP during flush!");
-                goto flush_stopped;
-              }
-            }
-            
-            // Открываем нужный клапан
-            switch (valve) {
-              case 1: ioexp_set_valve(1, true); break;
-              case 2: ioexp_set_valve(2, true); break;
-              case 3: ioexp_set_valve(3, true); break;
-              case 4: ioexp_set_valve(4, true); break;
-            }
-            
-            app_state.valve = valve;
-            xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-            ESP_LOGW(COUNTER_TAG, "Flush: valve %ld, round %d", (long)valve, round + 1);
-            
-            // Ждём g_flush_valve_ms с проверкой STOP каждые 100мс
-            const int loops = (g_flush_valve_ms + 99) / 100;
-            for (int i = 0; i < loops; i++) {
-              if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
-                if (stop_check & BTN_STOP_BIT) {
-                  ESP_LOGW(COUNTER_TAG, "STOP during flush!");
-                  goto flush_stopped;
-                }
-              }
-            }
-            
-            // Закрываем клапан
-            switch (valve) {
-              case 1: ioexp_set_valve(1, false); break;
-              case 2: ioexp_set_valve(2, false); break;
-              case 3: ioexp_set_valve(3, false); break;
-              case 4: ioexp_set_valve(4, false); break;
-            }
-            
-            app_state.valve = 0; // Клапан закрыт
-            xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-          }
-        }
-        
-        // Пауза между циклами и финальным открытием всех клапанов:
-        // используем тот же g_flush_valve_ms, чтобы у FLUSH было всего 2 уставки времени.
-        {
-          const int loops = (g_flush_valve_ms + 99) / 100;
-          for (int i = 0; i < loops; i++) {
-          uint32_t stop_check = 0;
-          if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (stop_check & BTN_STOP_BIT) {
-              ESP_LOGW(COUNTER_TAG, "STOP during flush!");
-              goto flush_stopped;
-            }
-          }
-          }
-        }
-        
-        // В конце промывки открываем все клапаны на g_flush_all_ms
-        ioexp_set_all_valves(true);
-        app_state.valve = 0; // Специальное значение для отображения всех клапанов
-        xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-        
-        // Ждём g_flush_all_ms с проверкой STOP каждые 100мс
-        {
-          const int loops = (g_flush_all_ms + 99) / 100;
-          for (int i = 0; i < loops; i++) {
-          uint32_t stop_check = 0;
-          if (xTaskNotifyWait(0x0, ULONG_MAX, &stop_check, pdMS_TO_TICKS(100)) == pdTRUE) {
-            if (stop_check & BTN_STOP_BIT) {
-              ESP_LOGW(COUNTER_TAG, "STOP during flush!");
-              goto flush_stopped;
-            }
-          }
-          }
-        }
-        
-        // Закрываем все клапаны и выключаем помпу
-        ioexp_set_all_valves(false);
-        ioexp_set_pump(false);
-        isOn = false;
-        pumpOn = false;
-        app_state.is_on = isOn;
-        app_state.valve = 0;
-        xTaskNotify(screen, UPDATE_BIT, eSetBits); // Обновляем экран
-        
-        // Выключаем режим промывки
-        flush_mode = false;
-        
-        ESP_LOGW(COUNTER_TAG, "Flush completed!");
-        // По завершении промывки переходим в STOP (для статуса на экране)
-        xTaskNotify(screen, BTN_STOP_BIT, eSetBits);
-        continue; // Переходим к следующей итерации цикла
-        
-        flush_stopped:
-        // Обработка остановки промывки
-        ioexp_set_all_valves(false);
-        ioexp_set_pump(false);
-        isOn = false;
-        pumpOn = false;
-        app_state.is_on = isOn;
-        app_state.valve = 0;
-        flush_mode = false;
-        xTaskNotify(screen, UPDATE_BIT, eSetBits);
-        ESP_LOGW(COUNTER_TAG, "Flush stopped by user!");
+        counter_run_flush_sequence(isOn, pumpOn, flush_mode,
+                                   g_runtime.flush_valve_ms, g_runtime.flush_all_ms);
         continue;
       }
       if (notification & BTN_RUN_BIT) {
@@ -650,7 +177,8 @@ void counterTask(void *pvParam) {
         rot = 0;
         // Важно: цель могла быть изменена через web/NVS после старта задачи.
         // Обновляем targets при каждом RUN из текущих app_config/app_state.
-        refresh_all_valve_targets_from_config();
+        counter_targets_refresh_all(app_config, app_state, accumulated_overpoured_ticks,
+                                    current_valve, valve_targets);
         isOn = true;
         pumpOn = true;
         ioexp_set_pump(isOn);
@@ -667,18 +195,13 @@ void counterTask(void *pvParam) {
         app_state.counter_error = false; // Сбрасываем флаг ошибки счётчика
         current_valve = 1; // Устанавливаем 1, чтобы сразу начать с первого клапана
         valve_start_time = xTaskGetTickCount(); // Начинаем отсчёт времени для первого клапана
-        // Сбрасываем флаг предупреждения о сухом ходе
-        warning_sent = false;
         // Выключаем режим промывки при старте обычной работы
         flush_mode = false;
-        // Инициализация переменных для коррекции скорости
-        last_correction_rot = 0;
-        last_correction_time = xTaskGetTickCount();
-        
         // СРАЗУ открываем первый клапан при старте
         app_state.valve = 1;
         // Для UI: показываем уставку первого клапана (с учётом base+encoder+offset)
-        refresh_valve_target_from_config(0);
+        counter_targets_refresh_one(app_config, app_state, accumulated_overpoured_ticks,
+                                    0, valve_targets);
         ioexp_set_valve(1, true);
         ioexp_set_valve(2, false);
         ioexp_set_valve(3, false);
@@ -706,6 +229,7 @@ void counterTask(void *pvParam) {
         
         // Останавливаем время и отправляем отчёт в Telegram
         if (app_state.start_time > 0) {
+          sync_bank_counters_to_current_run();
           int32_t total_time = xTaskGetTickCount() - app_state.start_time;
           app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
           app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
@@ -724,7 +248,8 @@ void counterTask(void *pvParam) {
       }
       if (notification & ENCODER_CHANGED_BIT) {
         app_config.encoder = app_state.encoder;
-        refresh_all_valve_targets_from_config();
+        counter_targets_refresh_all(app_config, app_state, accumulated_overpoured_ticks,
+                                    current_valve, valve_targets);
         
         xTaskNotify(screen, UPDATE_BIT, eSetBits);
         ESP_LOGW(COUNTER_TAG, "Encoder changed: %ld", app_state.encoder);
@@ -750,8 +275,8 @@ void counterTask(void *pvParam) {
         const esp_err_t save_err = config_save_pump_settings(
             (int32_t)app_config.steps,
             app_config.encoder,
-            g_flush_valve_ms,
-            g_flush_all_ms);
+            g_runtime.flush_valve_ms,
+            g_runtime.flush_all_ms);
         if (save_err != ESP_OK) {
           ESP_LOGE(COUNTER_TAG, "Failed to save encoder to NVS: %s", esp_err_to_name(save_err));
         }
@@ -768,17 +293,7 @@ void counterTask(void *pvParam) {
     }
     
     // Сохраняем банки в NVS (вынесено из ISR)
-    if (app_state.banks_count > last_banks_count) {
-      // Обновляем общий счётчик банок и сохраняем в NVS
-      app_state.total_banks_count++;
-      save_total_banks_count(app_state.total_banks_count);
-      
-      // Обновляем дневной счётчик банок и сохраняем в NVS
-      app_state.today_banks_count++;
-      save_today_banks_count(app_state.today_banks_count);
-      
-      last_banks_count = app_state.banks_count;
-    }
+    sync_bank_counters_to_current_run();
     
     app_state.is_on = isOn;
     app_state.water_current = rot;
@@ -789,88 +304,8 @@ void counterTask(void *pvParam) {
       last_valve = app_state.valve;
     }
     
-    // Проверка защиты от сухого хода помпы
-    if (isOn && pump_start_time > 0) {
-      TickType_t pump_work_time = xTaskGetTickCount() - pump_start_time;
-      int32_t counter_increase = rot - pump_start_counter;
-      
-      // Если помпа работает больше заданного времени и счётчик вырос меньше заданного порога
-      if (pump_work_time > pdMS_TO_TICKS(g_dry_run_timeout_ms) && counter_increase < g_dry_run_min_ticks) {
-        ESP_LOGW(COUNTER_TAG, "DRY RUN PROTECTION! Pump working for %ldms but counter increased only by %ld",
-                 (long)g_dry_run_timeout_ms, (long)counter_increase);
-        
-        // АВТОМАТИЧЕСКИ ОСТАНАВЛИВАЕМ РАБОТУ
-        app_state.rock = false;
-        isOn = false;
-        pumpOn = false;
-        ioexp_set_all_valves(false);
-        app_state.valve = 0;
-        current_valve = 0;
-        valve_start_time = 0;
-        
-        // Отправляем аварийное сообщение
-        char message[512];
-        snprintf(
-            message, sizeof(message),
-            "🚰 🚨 АВАРИЯ! Счётчик не работает!\n"
-            "Помпа работала %ld мс, но счётчик увеличился только на %ld (порог %ld)\n"
-            "Налито банок: %ld\n"
-            "Расход в литрах: %ld\n"
-            "Время работы: %02ld:%02ld\n"
-            "Налито сегодня: %ld банок\n"
-            "Всего налито с момента старта устройства: %ld банок",
-            (long)g_dry_run_timeout_ms, counter_increase, (long)g_dry_run_min_ticks,
-            app_state.banks_count, app_state.banks_count / 4,
-            (pump_work_time / 100) / 60, ((pump_work_time / 100) % 60), 
-            app_state.today_banks_count, app_state.total_banks_count);
-        telegram_send_message(message);
-        
-        vTaskDelay(pdMS_TO_TICKS(300));
-        ioexp_set_pump(false);
-        pump_start_time = 0;
-      }
-    }
-    
-    // Коррекция цели каждые 50 тиков на основе общего времени работы клапана
-    if (rot - last_correction_rot >= CORRECTION_INTERVAL) {
-      TickType_t now = xTaskGetTickCount();
-      
-      // Считаем общее время работы текущего клапана
-      float total_valve_time = (now - valve_start_time) / 100.0f;
-      
-      if (total_valve_time > 0.1f) { // чтобы не было деления на ноль
-        // Рассчитываем текущую скорость налива
-        const int idx0 = current_valve - 1;
-        const int32_t current_nominal_target = current_valve_nominal_target_ticks(idx0);
-        float current_speed_ml_per_second = (rot * TARGET_ML) / (current_nominal_target * total_valve_time);
-        
-        // Коррекция цели на основе скорости потока
-        if (current_speed_ml_per_second < NORMAL_SPEED_ML_PER_SECOND) {
-            // Получаем процент скорости
-            int speed_percent = (int)((current_speed_ml_per_second / NORMAL_SPEED_ML_PER_SECOND) * 100.0f);
-            
-            // Получаем тики коррекции из предварительно рассчитанного массива
-            int32_t ticks_per_iteration = 0;
-            if (speed_percent >= 30 && speed_percent <= 100) {
-                ticks_per_iteration = speed_correction_ticks[speed_percent - 30];
-            }
-            
-            // Уменьшаем текущую цель на фиксированное количество тиков (накапливаем коррекции)
-            int32_t new_target = valve_targets[current_valve - 1] - ticks_per_iteration;
-            
-            // Устанавливаем скорректированную цель
-            valve_targets[current_valve - 1] = new_target;
-            
-            // Обновляем previous_target для отображения на экране (номинальная уставка для текущего клапана)
-            app_state.previous_target = current_nominal_target;
-            app_state.water_target = new_target;
-            
-            // ESP_LOGW(COUNTER_TAG, "Speed: %d%% -> correction %ld ticks
-            //  -> target %ld", speed_percent, ticks_per_iteration, new_target);
-        }
-        last_correction_rot = rot;
-      }
-    }
+    counter_check_dry_run(isOn, pumpOn, pump_start_time, pump_start_counter, rot,
+                          current_valve, valve_start_time, g_runtime);
     
     if ((i++ % 20) == true) {
       xTaskNotify(screen, UPDATE_BIT, eSetBits);
