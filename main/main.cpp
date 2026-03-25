@@ -10,6 +10,7 @@
 #include "util/utility.h"
 #include "util/web_log.h"
 #include "util/spiffs_fs.h"
+#include "util/telemetry_manager.h"
 #include "util/wifi_manager.h"
 #include "util/telegram_manager.h"
 #include <main.h>
@@ -22,6 +23,7 @@
 #include "task/encoderTask.h"
 #include "task/screenTask.h"
 #include "task/telegramTask.h"
+#include "task/telemetryTask.h"
 #include "task/timeTask.h"
 
 #include "i2cdev.h"
@@ -48,6 +50,7 @@ app_state_t app_state = {
     .final_banks = 0, // Инициализация финального количества банок
     .counter_error = false, // Инициализация флага ошибки счётчика
     .previous_target = 0, // Инициализация предыдущей цели
+    .device_name = {0},
 };
 
 extern TaskHandle_t timeTaskHandle;
@@ -104,6 +107,7 @@ extern "C" void app_main(void) {
 
   // Инициализация Telegram менеджера
   ESP_ERROR_CHECK(telegram_init());
+  ESP_ERROR_CHECK(telemetry_init());
 
   // tasks.
   ESP_LOGI(MAINTAG, "Creating tasks...");
@@ -122,6 +126,8 @@ extern "C" void app_main(void) {
 
   xTaskCreate(telegramTask, "telegram", min * 8, NULL, 5, &telegramTaskHandle);
   ESP_LOGI(MAINTAG, "Telegram task created");
+  xTaskCreate(telemetryTask, "telemetry", min * 8, NULL, 4, &telemetryTaskHandle);
+  ESP_LOGI(MAINTAG, "Telemetry task created");
   xTaskCreate(timeTask, "time", min * 10, NULL, 1, &timeTaskHandle);
   ESP_LOGI(MAINTAG, "Time task created");
   ESP_LOGI(MAINTAG, "All tasks created successfully");

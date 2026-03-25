@@ -3,6 +3,8 @@
 #include "counterTask.h"
 #include "screenTask.h"
 #include "telegram_manager.h"
+#include "util/config.h"
+#include "util/telemetry_manager.h"
 
 #include "../util/pcf8575_io.h"
 
@@ -47,6 +49,14 @@ void counter_process_tick_progress(int32_t &rot,
   if (current_valve > NUM_VALVES) current_valve = 1;
   app_state.valve = current_valve;
   app_state.banks_count++;
+  app_state.total_banks_count++;
+  app_state.today_banks_count++;
+  (void)save_total_banks_count(app_state.total_banks_count);
+  (void)save_today_banks_count(app_state.today_banks_count);
+  (void)telemetry_send_fill_event(app_state.banks_count,
+                                  app_state.today_banks_count,
+                                  app_state.total_banks_count,
+                                  idx0 + 1);
   pending_open_valve = current_valve;
   valve_switch_pending = true;
   xTaskNotify(counter_task, VALVE_SWITCH_BIT, eSetBits);

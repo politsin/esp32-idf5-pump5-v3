@@ -19,16 +19,24 @@
 // Константы для работы с временем
 #define DAILY_REPORT_HOUR 18        // Час для отправки дневного отчёта (18:00)
 #define TIME_CHECK_INTERVAL_MS 60000 // Проверка времени каждую минуту
+#define TIME_RESYNC_INTERVAL_MS (60 * 60 * 1000) // Повторная синхронизация не чаще раза в час
 
 TaskHandle_t timeTaskHandle;
 
 // Переменные для отслеживания времени
 static int last_report_day = -1;
+static int last_report_year = -1;
 static bool daily_report_sent = false;
+static TickType_t last_sync_attempt_tick = 0;
+
+static bool is_time_valid(const struct tm &timeinfo) {
+    return timeinfo.tm_year >= (2024 - 1900);
+}
 
 // Функция для синхронизации времени
 static esp_err_t sync_time() {
     ESP_LOGI(TIME_TAG, "Starting time synchronization...");
+    last_sync_attempt_tick = xTaskGetTickCount();
     
     // Проверяем подключение к WiFi
     wifi_ap_record_t ap_info;
@@ -113,11 +121,18 @@ static void check_daily_reset() {
     time(&now);
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
+
+    if (!is_time_valid(timeinfo)) {
+        ESP_LOGW(TIME_TAG, "Current time is not valid yet, daily reset check is postponed");
+        return;
+    }
     
     // Проверяем, новый ли это день
-    if (timeinfo.tm_yday != last_report_day) {
-        ESP_LOGI(TIME_TAG, "New day detected: %d, resetting daily report flag", timeinfo.tm_yday);
+    if (timeinfo.tm_yday != last_report_day || timeinfo.tm_year != last_report_year) {
+        ESP_LOGI(TIME_TAG, "New day detected: year=%d yday=%d, resetting daily report flag",
+                 timeinfo.tm_year + 1900, timeinfo.tm_yday);
         last_report_day = timeinfo.tm_yday;
+        last_report_year = timeinfo.tm_year;
         daily_report_sent = false;
         
         // Также проверяем сброс дневного счётчика
@@ -137,7 +152,10 @@ void timeTask(void *pvParam) {
     time(&now);
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
-    last_report_day = timeinfo.tm_yday;
+    if (is_time_valid(timeinfo)) {
+        last_report_day = timeinfo.tm_yday;
+        last_report_year = timeinfo.tm_year;
+    }
     
     const TickType_t xBlockTime = pdMS_TO_TICKS(TIME_CHECK_INTERVAL_MS);
     
@@ -145,6 +163,18 @@ void timeTask(void *pvParam) {
         // Получаем текущее время
         time(&now);
         localtime_r(&now, &timeinfo);
+
+        // Если на старте WiFi ещё не был поднят, повторяем синхронизацию,
+        // но не чаще одного раза в час.
+        const TickType_t now_tick = xTaskGetTickCount();
+        const bool sync_retry_due =
+            (last_sync_attempt_tick == 0) ||
+            ((now_tick - last_sync_attempt_tick) >= pdMS_TO_TICKS(TIME_RESYNC_INTERVAL_MS));
+        if (!is_time_valid(timeinfo) && sync_retry_due) {
+            sync_time();
+            time(&now);
+            localtime_r(&now, &timeinfo);
+        }
         
         // Проверяем сброс дневного счётчика
         check_daily_reset();

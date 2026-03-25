@@ -118,6 +118,8 @@ async function refreshConfig(){
     if(!j||!j.ok) return;
     if($('cfg-steps')) $('cfg-steps').value = (j.steps!=null)?String(j.steps):'';
     if($('cfg-enc')) $('cfg-enc').value = (j.encoder!=null)?String(j.encoder):'';
+    if($('cfg-device-name')) $('cfg-device-name').value = j.device_name || '';
+    if($('cfg-telemetry-url')) $('cfg-telemetry-url').value = j.telemetry_url || '';
     if(Array.isArray(j.valve_off)){
       if($('cfg-voff1')) $('cfg-voff1').value = (j.valve_off[0]!=null)?String(j.valve_off[0]):'0';
       if($('cfg-voff2')) $('cfg-voff2').value = (j.valve_off[1]!=null)?String(j.valve_off[1]):'0';
@@ -131,12 +133,12 @@ async function refreshConfig(){
     if($('cfg-ticksrc')) $('cfg-ticksrc').value = (j.tick_source!=null)?String(j.tick_source):'1';
     if($('cfg-tickdeb')) $('cfg-tickdeb').value = (j.tick_min_interval_us!=null)?String(j.tick_min_interval_us):'';
     if($('cfg-tickgpio')) $('cfg-tickgpio').value = (j.tick_gpio!=null)?('GPIO'+String(j.tick_gpio)):'';
-    if($('cfg-tickpull')) $('cfg-tickpull').value = (j.tick_pull!=null)?String(j.tick_pull):'0';
+    if($('cfg-tickpull')) $('cfg-tickpull').value = (j.tick_pull!=null)?String(j.tick_pull):'1';
     if($('cfg-meta')){
       if(Array.isArray(j.valve_target)){
-        $('cfg-meta').textContent = `base=${j.water_target} ticks; P1=${j.valve_target[0]} P2=${j.valve_target[1]} P3=${j.valve_target[2]} P4=${j.valve_target[3]}`;
+        $('cfg-meta').textContent = `id=${j.device_id||'—'}; base=${j.water_target} ticks; P1=${j.valve_target[0]} P2=${j.valve_target[1]} P3=${j.valve_target[2]} P4=${j.valve_target[3]}`;
       }else{
-        $('cfg-meta').textContent = (j.water_target!=null)?('base=' + j.water_target + ' ticks'):'—';
+        $('cfg-meta').textContent = (j.water_target!=null)?(`id=${j.device_id||'—'}; base=` + j.water_target + ' ticks'):'—';
       }
     }
     if($('tick-meta')) $('tick-meta').textContent = (j.water_target!=null)?('base=' + j.water_target + ' ticks'):'—';
@@ -150,6 +152,8 @@ async function saveConfig(){
   try{
     const steps = parseInt(($('cfg-steps')||{}).value||'0',10)||0;
     const enc = parseInt(($('cfg-enc')||{}).value||'0',10)||0;
+    const deviceName = (($('cfg-device-name')||{}).value||'').trim();
+    const telemetryUrl = (($('cfg-telemetry-url')||{}).value||'').trim();
     const voff1 = parseInt(($('cfg-voff1')||{}).value||'0',10)||0;
     const voff2 = parseInt(($('cfg-voff2')||{}).value||'0',10)||0;
     const voff3 = parseInt(($('cfg-voff3')||{}).value||'0',10)||0;
@@ -160,11 +164,13 @@ async function saveConfig(){
     const drymin = parseInt(($('cfg-drymin')||{}).value||'0',10)||0;
     const ticksrc = parseInt(($('cfg-ticksrc')||{}).value||'1',10);
     const tickdeb = parseInt(($('cfg-tickdeb')||{}).value||'0',10)||0;
-    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'0',10);
+    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'1',10);
     if(msg) msg.textContent='Сохранение...';
     const qs =
       `steps=${encodeURIComponent(String(steps))}` +
       `&encoder=${encodeURIComponent(String(enc))}` +
+      `&device_name=${encodeURIComponent(deviceName)}` +
+      `&telemetry_url=${encodeURIComponent(telemetryUrl)}` +
       `&valve_off1=${encodeURIComponent(String(voff1))}` +
       `&valve_off2=${encodeURIComponent(String(voff2))}` +
       `&valve_off3=${encodeURIComponent(String(voff3))}` +
@@ -211,7 +217,7 @@ async function saveTickConfig(){
   try{
     const ticksrc = parseInt(($('cfg-ticksrc')||{}).value||'1',10);
     const tickdeb = parseInt(($('cfg-tickdeb')||{}).value||'0',10)||0;
-    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'0',10);
+    const tickpull = parseInt(($('cfg-tickpull')||{}).value||'1',10);
     if(msg) msg.textContent='Сохранение...';
     const qs = `tick_source=${encodeURIComponent(String(ticksrc))}&tick_min_interval_us=${encodeURIComponent(String(tickdeb))}&tick_pull=${encodeURIComponent(String(tickpull))}`;
     const r=await fetch('/api/config?'+qs,{method:'POST'});
@@ -341,6 +347,8 @@ async function refreshInfo(){
     const j=await r.json();
     if($('ip')) $('ip').textContent=j.ip||'—';
     if($('mac')) $('mac').textContent=j.mac||'—';
+    if($('device-id')) $('device-id').textContent=j.device_id||'—';
+    if($('device-name')) $('device-name').textContent=j.device_name||'—';
     if($('rssi')) $('rssi').textContent=(j.rssi_dbm!=null)?(j.rssi_dbm+' dBm'):'—';
     if($('heap')) $('heap').textContent=(j.free_heap!=null)?(j.free_heap+' bytes'):'—';
     if($('uptime')) $('uptime').textContent=(j.uptime_s!=null)?(j.uptime_s+' s'):'—';
@@ -461,5 +469,3 @@ setInterval(refreshI2c, 1200); refreshI2c();
 setInterval(refreshStats, 1500); refreshStats();
 setInterval(refreshTickLevel, 3000); refreshTickLevel();
 refreshConfig();
-
-

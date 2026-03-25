@@ -26,6 +26,8 @@ esp_err_t check_and_reset_daily_counter();
 esp_err_t config_load_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
 esp_err_t config_save_pump_settings(int32_t steps, int32_t encoder, int32_t flush_valve_ms, int32_t flush_all_ms);
 void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms);
+void config_get_cached_telemetry(char *device_name, size_t device_name_len, char *telemetry_url, size_t telemetry_url_len);
+esp_err_t config_save_telemetry(const char *device_name, const char *telemetry_url);
 
 // Индивидуальные сдвиги уставки по клапанам (в тиках): target_i = steps + encoder + valve_offset[i]
 void config_get_cached_valve_offsets(int32_t valve_offset[NUM_VALVES]);

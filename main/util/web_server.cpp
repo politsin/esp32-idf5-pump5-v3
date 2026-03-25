@@ -25,6 +25,7 @@
 #include "i2c.h"
 #include "main.h"
 #include "task/counterTask.h"
+#include "telemetry_manager.h"
 
 #include "pcf8575_io.h"
 #include "spiffs_fs.h"
@@ -71,6 +72,38 @@ static const char *content_type_for(const char *path) {
   if (strcmp(ext, ".png") == 0) return "image/png";
   if (strcmp(ext, ".svg") == 0) return "image/svg+xml";
   return "application/octet-stream";
+}
+
+static int hex_digit_to_int(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+  return -1;
+}
+
+static void url_decode_inplace(char *s) {
+  if (!s) return;
+
+  char *src = s;
+  char *dst = s;
+  while (*src) {
+    if (*src == '%') {
+      const int hi = hex_digit_to_int(*(src + 1));
+      const int lo = hex_digit_to_int(*(src + 2));
+      if (hi >= 0 && lo >= 0) {
+        *dst++ = static_cast<char>((hi << 4) | lo);
+        src += 3;
+        continue;
+      }
+    } else if (*src == '+') {
+      *dst++ = ' ';
+      src++;
+      continue;
+    }
+
+    *dst++ = *src++;
+  }
+  *dst = '\0';
 }
 
 static esp_err_t send_spiffs_error_page(httpd_req_t *req, const char *reason) {
@@ -182,6 +215,8 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
   if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
     format_mac(mac, mac_s, sizeof(mac_s));
   }
+  char device_name[64] = {0};
+  config_get_cached_telemetry(device_name, sizeof(device_name), nullptr, 0);
 
   const uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
   const uint32_t heap = esp_get_free_heap_size();
@@ -201,11 +236,13 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
              (unsigned)app->app_elf_sha256[6], (unsigned)app->app_elf_sha256[7]);
   }
 
-  char body[512];
+  char body[768];
   const int n = snprintf(body, sizeof(body),
                          "{"
                          "\"ip\":\"%s\","
                          "\"mac\":\"%s\","
+                         "\"device_name\":\"%s\","
+                         "\"device_id\":\"%s\","
                          "\"rssi_dbm\":%d,"
                          "\"free_heap\":%" PRIu32 ","
                          "\"uptime_s\":%" PRIu32 ","
@@ -218,6 +255,8 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
                          "}",
                          ip[0] ? ip : "",
                          mac_s[0] ? mac_s : "",
+                         device_name,
+                         telemetry_resolved_device_id(),
                          rssi,
                          heap,
                          uptime_s,
@@ -227,7 +266,7 @@ static esp_err_t info_json_get_handler(httpd_req_t *req) {
                          app ? app->date : "",
                          app ? app->time : "",
                          sha8);
-  if (n <= 0) return httpd_resp_send_500(req);
+  if (n <= 0 || n >= (int)sizeof(body)) return httpd_resp_send_500(req);
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -401,9 +440,12 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
   config_get_cached_dry_run(&dry_ms, &dry_min);
   int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
   config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
+  char device_name[64] = {0};
+  char telemetry_url[192] = {0};
+  config_get_cached_telemetry(device_name, sizeof(device_name), telemetry_url, sizeof(telemetry_url));
   const int32_t target = steps + enc;
 
-  char body[768];
+  char body[1152];
   const int n = snprintf(body, sizeof(body),
                          "{"
                          "\"ok\":1,"
@@ -419,7 +461,10 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
                          "\"tick_source\":%ld,"
                          "\"tick_min_interval_us\":%ld,"
                          "\"tick_pull\":%ld,"
-                         "\"tick_gpio\":%ld"
+                         "\"tick_gpio\":%ld,"
+                         "\"device_name\":\"%s\","
+                         "\"device_id\":\"%s\","
+                         "\"telemetry_url\":\"%s\""
                          "}",
                          (long)steps, (long)enc, (long)target,
                          (long)voff[0], (long)voff[1], (long)voff[2], (long)voff[3],
@@ -427,7 +472,10 @@ static esp_err_t api_config_get_handler(httpd_req_t *req) {
                          (long)f1, (long)f2,
                          (long)dry_ms, (long)dry_min,
                          (long)tick_source, (long)tick_min_us, (long)tick_pull,
-                         (long)COUNTER_TICK_GPIO);
+                         (long)COUNTER_TICK_GPIO,
+                         device_name,
+                         telemetry_resolved_device_id(),
+                         telemetry_url);
   if (n <= 0 || n >= (int)sizeof(body)) return httpd_resp_send_500(req);
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
@@ -439,7 +487,7 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     return httpd_resp_send(req, "running", HTTPD_RESP_USE_STRLEN);
   }
 
-  char query[384];
+  char query[768];
   if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "missing query", HTTPD_RESP_USE_STRLEN);
@@ -451,6 +499,12 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     *out = (int32_t)strtol(tmp, nullptr, 10);
     return true;
   };
+  auto get_str = [&](const char *key, char *out, size_t out_len) -> bool {
+    if (!out || out_len == 0) return false;
+    if (httpd_query_key_value(query, key, out, out_len) != ESP_OK) return false;
+    url_decode_inplace(out);
+    return true;
+  };
 
   int32_t steps = 0, enc = 0, f1 = 0, f2 = 0;
   config_get_cached_pump_settings(&steps, &enc, &f1, &f2);
@@ -460,6 +514,9 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   config_get_cached_dry_run(&dry_ms, &dry_min);
   int32_t tick_source = 0, tick_min_us = 0, tick_pull = 0;
   config_get_cached_tick_counter(&tick_source, &tick_min_us, &tick_pull);
+  char device_name[64] = {0};
+  char telemetry_url[192] = {0};
+  config_get_cached_telemetry(device_name, sizeof(device_name), telemetry_url, sizeof(telemetry_url));
 
   int32_t v = 0;
   if (get_i32("steps", &v)) steps = v;
@@ -478,6 +535,8 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   if (get_i32("tick_pull", &v)) tick_pull = v;
   // Совместимость со старым ключом
   if (get_i32("tick_pullup", &v)) tick_pull = (v != 0) ? 1 : 0;
+  (void)get_str("device_name", device_name, sizeof(device_name));
+  (void)get_str("telemetry_url", telemetry_url, sizeof(telemetry_url));
 
   // Валидация
   if (steps < 1 || steps > 500000) {
@@ -522,6 +581,14 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "bad tick_pull", HTTPD_RESP_USE_STRLEN);
   }
+  if (strlen(device_name) >= sizeof(device_name) - 1) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad device_name", HTTPD_RESP_USE_STRLEN);
+  }
+  if (strlen(telemetry_url) >= sizeof(telemetry_url) - 1) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, "bad telemetry_url", HTTPD_RESP_USE_STRLEN);
+  }
 
   const esp_err_t err = config_save_pump_settings(steps, enc, f1, f2);
   if (err != ESP_OK) {
@@ -545,6 +612,12 @@ static esp_err_t api_config_post_handler(httpd_req_t *req) {
   if (err4 != ESP_OK) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     return httpd_resp_send(req, "save tick config failed", HTTPD_RESP_USE_STRLEN);
+  }
+
+  const esp_err_t err5 = config_save_telemetry(device_name, telemetry_url);
+  if (err5 != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    return httpd_resp_send(req, "save telemetry config failed", HTTPD_RESP_USE_STRLEN);
   }
 
   // Применяем в рантайме для экрана/логики
@@ -1016,4 +1089,3 @@ esp_err_t web_server_start(void) {
   ESP_LOGI(TAG, "Web server started on :80 (no auth)");
   return ESP_OK;
 }
-

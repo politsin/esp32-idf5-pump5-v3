@@ -2,6 +2,7 @@ body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:16px;background:#fff
 table{border-collapse:collapse;}
 td{padding:6px 10px;border-bottom:1px solid #ddd;}
 td.k{color:#555;}
+#ip{font-size:20px;font-weight:600;font-family:ui-monospace,Consolas,monospace;letter-spacing:.02em;}
 
 .row{display:flex;gap:12px;align-items:center;margin:10px 0;}
 .name{min-width:120px;}

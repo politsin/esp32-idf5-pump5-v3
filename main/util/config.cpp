@@ -31,17 +31,55 @@ static int32_t s_dry_run_min_ticks = 50;    // минимальный приро
 static int32_t s_tick_source = 1;           // 0=PCNT, 1=GPIO ISR + debounce (по умолчанию — более надёжно на "грязном" сигнале)
 static int32_t s_tick_min_interval_us = 0; // debounce выключен (считаем каждое прерывание)
 static int32_t s_tick_pull = 1;            // 0=OFF, 1=PULL-UP, 2=PULL-DOWN (по умолчанию PULL-UP)
+static char s_device_name[64] = {0};
+static char s_telemetry_url[192] = {0};
 
 // NVS ограничивает длину имени ключа 15 символами.
 static constexpr const char *NVS_KEY_DRY_RUN_TIMEOUT_MS = "dry_ms";
 static constexpr const char *NVS_KEY_DRY_RUN_MIN_TICKS = "dry_min";
 static constexpr const char *NVS_KEY_TICK_MIN_INTERVAL_US = "tick_min_us";
+static constexpr const char *NVS_KEY_LAST_RESET_ID = "last_reset_id";
+static constexpr const char *NVS_KEY_LAST_RESET_DAY_LEGACY = "last_reset_day";
+static constexpr const char *NVS_KEY_DEVICE_NAME = "dev_name";
+static constexpr const char *NVS_KEY_TELEMETRY_URL = "telemetry_url";
+
+static bool is_time_valid(const struct tm &timeinfo) {
+  return timeinfo.tm_year >= (2024 - 1900);
+}
+
+static int32_t make_day_id(const struct tm &timeinfo) {
+  return static_cast<int32_t>((timeinfo.tm_year + 1900) * 1000 + timeinfo.tm_yday);
+}
 
 void config_get_cached_pump_settings(int32_t *steps, int32_t *encoder, int32_t *flush_valve_ms, int32_t *flush_all_ms) {
   if (steps) *steps = s_steps;
   if (encoder) *encoder = s_encoder;
   if (flush_valve_ms) *flush_valve_ms = s_flush_valve_ms;
   if (flush_all_ms) *flush_all_ms = s_flush_all_ms;
+}
+
+void config_get_cached_telemetry(char *device_name, size_t device_name_len, char *telemetry_url, size_t telemetry_url_len) {
+  if (device_name && device_name_len > 0) {
+    snprintf(device_name, device_name_len, "%s", s_device_name);
+  }
+  if (telemetry_url && telemetry_url_len > 0) {
+    snprintf(telemetry_url, telemetry_url_len, "%s", s_telemetry_url);
+  }
+}
+
+esp_err_t config_save_telemetry(const char *device_name, const char *telemetry_url) {
+  if (!config) return ESP_ERR_INVALID_STATE;
+
+  s_device_name[0] = '\0';
+  s_telemetry_url[0] = '\0';
+  if (device_name) snprintf(s_device_name, sizeof(s_device_name), "%s", device_name);
+  if (telemetry_url) snprintf(s_telemetry_url, sizeof(s_telemetry_url), "%s", telemetry_url);
+
+  esp_err_t err = config->set_string(NVS_KEY_DEVICE_NAME, s_device_name);
+  if (err != ESP_OK) return err;
+  err = config->set_string(NVS_KEY_TELEMETRY_URL, s_telemetry_url);
+  if (err != ESP_OK) return err;
+  return config->commit();
 }
 
 void config_get_cached_valve_offsets(int32_t valve_offset[NUM_VALVES]) {
@@ -341,6 +379,20 @@ esp_err_t config_init() {
                (long)s_tick_source, (long)s_tick_min_interval_us);
     }
 
+    err = config->get_string(NVS_KEY_DEVICE_NAME, s_device_name, sizeof(s_device_name));
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+      s_device_name[0] = '\0';
+      (void)config->set_string(NVS_KEY_DEVICE_NAME, s_device_name);
+    }
+
+    err = config->get_string(NVS_KEY_TELEMETRY_URL, s_telemetry_url, sizeof(s_telemetry_url));
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+      s_telemetry_url[0] = '\0';
+      (void)config->set_string(NVS_KEY_TELEMETRY_URL, s_telemetry_url);
+    }
+    ESP_LOGW(CONFIG_TAG, "Telemetry settings: device_name='%s' telemetry_url='%s'",
+             s_device_name, s_telemetry_url);
+
     // Write
     ESP_LOGI(CONFIG_TAG, "Updating restart counter in NVS ... ");
     restart_counter++;
@@ -434,35 +486,64 @@ esp_err_t check_and_reset_daily_counter() {
   struct tm timeinfo;
   time(&now);
   localtime_r(&now, &timeinfo);
+
+  if (!is_time_valid(timeinfo)) {
+    ESP_LOGW(CONFIG_TAG,
+             "Skipping daily counter check because current time is not valid yet: year=%d yday=%d",
+             timeinfo.tm_year + 1900, timeinfo.tm_yday);
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  const int32_t current_day_id = make_day_id(timeinfo);
   
-  // Загружаем дату последнего сброса
-  int32_t last_reset_day = 0;
-  esp_err_t err = config->get_item("last_reset_day", last_reset_day);
+  // Загружаем дату последнего сброса. Новый формат хранит год и день года,
+  // чтобы переход через 1 января тоже обрабатывался корректно.
+  int32_t last_reset_id = 0;
+  esp_err_t err = config->get_item(NVS_KEY_LAST_RESET_ID, last_reset_id);
   if (err == ESP_ERR_NVS_NOT_FOUND) {
-    // Первый запуск - сохраняем текущий день
-    last_reset_day = timeinfo.tm_yday;
-    config->set_item("last_reset_day", last_reset_day);
-    config->commit();
-    ESP_LOGI(CONFIG_TAG, "First run - setting last reset day to %ld", last_reset_day);
+    int32_t legacy_reset_day = 0;
+    const esp_err_t legacy_err = config->get_item(NVS_KEY_LAST_RESET_DAY_LEGACY, legacy_reset_day);
+    if (legacy_err == ESP_OK) {
+      last_reset_id = (timeinfo.tm_year + 1900) * 1000 + legacy_reset_day;
+      ESP_LOGI(CONFIG_TAG, "Migrating legacy last reset day=%ld to day_id=%ld",
+               (long)legacy_reset_day, (long)last_reset_id);
+    } else {
+      last_reset_id = current_day_id;
+      config->set_item(NVS_KEY_LAST_RESET_ID, last_reset_id);
+      config->commit();
+      ESP_LOGI(CONFIG_TAG, "First run - setting last reset day id to %ld", (long)last_reset_id);
+      return ESP_OK;
+    }
+  } else if (err != ESP_OK) {
+    ESP_LOGE(CONFIG_TAG, "Failed to read last reset day id: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  if (current_day_id < last_reset_id) {
+    ESP_LOGW(CONFIG_TAG,
+             "Current day id %ld is older than last reset id %ld, skipping reset until time stabilizes",
+             (long)current_day_id, (long)last_reset_id);
     return ESP_OK;
   }
   
   // Проверяем, нужно ли сбросить счётчик (новый день)
-  if (timeinfo.tm_yday != last_reset_day) {
-    ESP_LOGI(CONFIG_TAG, "New day detected! Resetting daily counter. Old day: %ld, New day: %d", 
-             last_reset_day, timeinfo.tm_yday);
+  if (current_day_id != last_reset_id) {
+    ESP_LOGI(CONFIG_TAG,
+             "New day detected! Resetting daily counter. Old day id: %ld, New day id: %ld",
+             (long)last_reset_id, (long)current_day_id);
     
     // Сбрасываем дневной счётчик
     app_state.today_banks_count = 0;
     save_today_banks_count(0);
     
     // Обновляем дату последнего сброса
-    config->set_item("last_reset_day", timeinfo.tm_yday);
+    config->set_item(NVS_KEY_LAST_RESET_ID, current_day_id);
+    config->set_item(NVS_KEY_LAST_RESET_DAY_LEGACY, timeinfo.tm_yday);
     config->commit();
     
     ESP_LOGI(CONFIG_TAG, "Daily counter reset successfully");
   } else {
-    ESP_LOGI(CONFIG_TAG, "Same day - no reset needed. Current day: %d", timeinfo.tm_yday);
+    ESP_LOGI(CONFIG_TAG, "Same day - no reset needed. Current day id: %ld", (long)current_day_id);
   }
   
   return ESP_OK;

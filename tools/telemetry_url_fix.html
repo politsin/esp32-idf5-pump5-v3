@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telemetry URL Fix</title>
+    <style>
+      :root{
+        --bg:#f6f7f9;
+        --card:#ffffff;
+        --text:#1f2937;
+        --muted:#667085;
+        --border:#d0d5dd;
+        --accent:#0f766e;
+        --accent-2:#115e59;
+      }
+      *{box-sizing:border-box}
+      body{
+        margin:0;
+        padding:24px;
+        background:linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%);
+        color:var(--text);
+        font:16px/1.45 "Segoe UI",Arial,sans-serif;
+      }
+      .wrap{
+        max-width:760px;
+        margin:0 auto;
+      }
+      .card{
+        background:var(--card);
+        border:1px solid var(--border);
+        border-radius:18px;
+        padding:22px;
+        box-shadow:0 12px 30px rgba(15,23,42,.06);
+      }
+      h1{
+        margin:0 0 10px 0;
+        font-size:28px;
+        line-height:1.15;
+      }
+      p{
+        margin:10px 0;
+      }
+      .muted{
+        color:var(--muted);
+      }
+      .grid{
+        display:grid;
+        gap:14px;
+        margin-top:18px;
+      }
+      label{
+        display:grid;
+        gap:6px;
+        font-weight:600;
+      }
+      input{
+        width:100%;
+        padding:12px 14px;
+        border:1px solid var(--border);
+        border-radius:12px;
+        font:15px/1.2 ui-monospace,Consolas,monospace;
+        background:#fff;
+      }
+      .actions{
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+        margin-top:18px;
+      }
+      button,a.btn{
+        appearance:none;
+        border:0;
+        border-radius:12px;
+        padding:12px 16px;
+        background:var(--accent);
+        color:#fff;
+        cursor:pointer;
+        text-decoration:none;
+        font:600 15px/1.2 "Segoe UI",Arial,sans-serif;
+      }
+      button:hover,a.btn:hover{background:var(--accent-2)}
+      .ghost{
+        background:#fff;
+        color:var(--text);
+        border:1px solid var(--border);
+      }
+      .box{
+        margin-top:18px;
+        padding:14px 16px;
+        border-radius:14px;
+        background:#f8fafc;
+        border:1px solid #e5e7eb;
+      }
+      code{
+        font-family:ui-monospace,Consolas,monospace;
+        background:#eef2f7;
+        border-radius:8px;
+        padding:2px 6px;
+      }
+      .ok{
+        color:#166534;
+        font-weight:600;
+      }
+      iframe{
+        width:0;
+        height:0;
+        border:0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Исправление Telemetry URL</h1>
+        <p class="muted">
+          Эта страница отправляет на устройство <code>POST /api/config</code> и записывает
+          нормальный <code>telemetry_url</code> без перепрошивки.
+        </p>
+
+        <form id="fix-form" method="post" target="post-result">
+          <div class="grid">
+            <label>
+              IP устройства
+              <input id="device-ip" type="text" value="192.168.1.123" placeholder="192.168.1.123" />
+            </label>
+
+            <label>
+              Telemetry URL
+              <input id="telemetry-url" type="text" value="https://functions.yandexcloud.net/d4eptn6u0h70bq5as9fl" />
+            </label>
+
+            <label>
+              Device Name
+              <input id="device-name" type="text" value="codex-probe" placeholder="Можно оставить пустым" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit">Отправить исправление</button>
+            <a id="check-link" class="btn ghost" href="#" target="_blank" rel="noreferrer">Открыть /api/config</a>
+          </div>
+        </form>
+
+        <div class="box">
+          <div id="status">Заполните IP и нажмите "Отправить исправление".</div>
+          <p class="muted">
+            После отправки откройте <code>/api/config</code> и проверьте, что поле
+            <code>telemetry_url</code> выглядит как обычный URL, без <code>%3A</code> и <code>%2F</code>.
+          </p>
+        </div>
+
+        <div class="box">
+          <strong>Что делает страница</strong>
+          <p class="muted">
+            Отправляется запрос вида:
+            <code>POST http://IP/api/config?device_name=...&telemetry_url=https://functions.yandexcloud.net/...</code>
+          </p>
+          <p class="muted">
+            Остальные параметры конфигурации устройство оставляет как есть, потому что обработчик
+            <code>/api/config</code> подставляет текущие значения для неуказанных полей.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <iframe name="post-result" title="post-result"></iframe>
+
+    <script>
+      const form = document.getElementById('fix-form');
+      const ipEl = document.getElementById('device-ip');
+      const urlEl = document.getElementById('telemetry-url');
+      const nameEl = document.getElementById('device-name');
+      const statusEl = document.getElementById('status');
+      const checkLink = document.getElementById('check-link');
+
+      function normalizeBase(ip) {
+        const raw = (ip || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
+        return 'http://' + raw.replace(/\/+$/, '');
+      }
+
+      function updateCheckLink() {
+        const base = normalizeBase(ipEl.value);
+        checkLink.href = base ? (base + '/api/config') : '#';
+      }
+
+      ipEl.addEventListener('input', updateCheckLink);
+      updateCheckLink();
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const base = normalizeBase(ipEl.value);
+        const telemetryUrl = (urlEl.value || '').trim();
+        const deviceName = (nameEl.value || '').trim();
+
+        if (!base) {
+          statusEl.textContent = 'Укажите IP устройства.';
+          return;
+        }
+        if (!telemetryUrl) {
+          statusEl.textContent = 'Укажите Telemetry URL.';
+          return;
+        }
+
+        const params = new URLSearchParams();
+        if (deviceName) params.set('device_name', deviceName);
+        params.set('telemetry_url', telemetryUrl);
+
+        form.action = base + '/api/config?' + params.toString();
+        updateCheckLink();
+        statusEl.innerHTML =
+          '<span class="ok">POST отправлен.</span> Теперь откройте /api/config и проверьте поле telemetry_url.';
+        form.submit();
+      });
+    </script>
+  </body>
+</html>

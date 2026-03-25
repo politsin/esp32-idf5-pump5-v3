@@ -22,6 +22,8 @@
         <table id="info">
           <tr><td class="k">IP</td><td id="ip">—</td></tr>
           <tr><td class="k">MAC (STA)</td><td id="mac">—</td></tr>
+          <tr><td class="k">Device ID</td><td id="device-id">—</td></tr>
+          <tr><td class="k">Device Name</td><td id="device-name">—</td></tr>
           <tr><td class="k">RSSI</td><td id="rssi">—</td></tr>
           <tr><td class="k">Free heap</td><td id="heap">—</td></tr>
           <tr><td class="k">Uptime</td><td id="uptime">—</td></tr>
@@ -121,6 +123,14 @@
         <label class="cfg-row">
           <span class="cfg-k">Энкодер (offset ticks)</span>
           <input id="cfg-enc" class="cfg-in" type="number" step="1" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Имя устройства</span>
+          <input id="cfg-device-name" class="cfg-in" type="text" maxlength="63" placeholder="по умолчанию будет device id" />
+        </label>
+        <label class="cfg-row">
+          <span class="cfg-k">Telemetry URL</span>
+          <input id="cfg-telemetry-url" class="cfg-in" type="text" maxlength="191" placeholder="https://functions.yandexcloud.net/..." />
         </label>
         <div class="muted" style="grid-column: 1 / -1; margin-top:-6px">
           Итоговая уставка для каждого клапана считается так: <code>(steps + encoder) + offset_клапана</code>.
@@ -227,5 +237,4 @@
     <script src="/app.js"></script>
   </body>
 </html>
-
 

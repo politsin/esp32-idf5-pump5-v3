@@ -30,7 +30,6 @@ static int32_t pump_start_counter = 0;
 static bool flush_mode = false;
 static int32_t current_valve = 0;
 static int32_t last_valve = 0;
-static int32_t last_banks_count = 0;
 static int32_t valve_targets[NUM_VALVES] = {
     APP_DEFAULT_TARGET_TICKS,
     APP_DEFAULT_TARGET_TICKS,
@@ -60,17 +59,6 @@ static CounterRuntimeSettings g_runtime = {
 void counter_reload_runtime_settings() {
   counter_targets_reload_runtime_settings(app_config, app_state, valve_targets, current_valve,
                                           accumulated_overpoured_ticks, g_runtime);
-}
-
-static void sync_bank_counters_to_current_run() {
-  if (app_state.banks_count <= last_banks_count) return;
-
-  const int32_t delta = app_state.banks_count - last_banks_count;
-  app_state.total_banks_count += delta;
-  app_state.today_banks_count += delta;
-  save_total_banks_count(app_state.total_banks_count);
-  save_today_banks_count(app_state.today_banks_count);
-  last_banks_count = app_state.banks_count;
 }
 
 app_config_t app_config = {
@@ -207,9 +195,6 @@ void counterTask(void *pvParam) {
         ioexp_set_valve(3, false);
         ioexp_set_valve(4, false);
         
-        // Сброс last_banks_count для корректного отслеживания новых банок
-        last_banks_count = 0;
-        
         xTaskNotify(screen, COUNTER_START_BIT, eSetBits);
         vTaskDelay(pdMS_TO_TICKS(300));
       }
@@ -229,7 +214,6 @@ void counterTask(void *pvParam) {
         
         // Останавливаем время и отправляем отчёт в Telegram
         if (app_state.start_time > 0) {
-          sync_bank_counters_to_current_run();
           int32_t total_time = xTaskGetTickCount() - app_state.start_time;
           app_state.final_time = total_time / 100; // Сохраняем финальное время в секундах
           app_state.final_banks = app_state.banks_count; // Сохраняем финальное количество банок
@@ -291,9 +275,6 @@ void counterTask(void *pvParam) {
         telegram_send_message(message);
       }
     }
-    
-    // Сохраняем банки в NVS (вынесено из ISR)
-    sync_bank_counters_to_current_run();
     
     app_state.is_on = isOn;
     app_state.water_current = rot;

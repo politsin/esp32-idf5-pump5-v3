@@ -16,6 +16,8 @@ void loop(void *pvParameter);
 #define NUM_VALVES 4
 #endif
 
+static constexpr int32_t APP_DEFAULT_TARGET_TICKS = 1024;
+
 typedef struct {
   uint32_t steps;
   int32_t encoder;
@@ -43,6 +45,7 @@ typedef struct {
   int32_t final_banks; // Финальное количество банок при остановке
   bool counter_error; // Флаг ошибки счётчика
   int32_t previous_target; // Предыдущая цель для отображения изменения
+  char device_name[64]; // Имя устройства для телеметрии/UI
 } app_state_t;
 
 // Bitmask for screen notifications.  Note: this is an enum, not a struct.
