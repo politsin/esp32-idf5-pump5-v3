@@ -7,6 +7,7 @@ typedef gpio_num_t Pintype;
 // static constexpr Pintype LED = GPIO_NUM_22;
 #include "sdkconfig.h"
 #include <esp_log.h>
+#include <esp_netif.h>
 #include <rom/gpio.h>
 #define SCREEN_TAG "SCREEN"
 
@@ -53,6 +54,25 @@ void app_lvgl_unlock(void);
 static void app_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
                               lv_color_t *color_map);
 static void app_increase_lvgl_tick(void *arg);
+
+static void format_ip_text(char *out, size_t out_len) {
+  if (!out || out_len == 0) return;
+  out[0] = '\0';
+
+  esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+  if (!netif) {
+    snprintf(out, out_len, "--.--.--.--");
+    return;
+  }
+
+  esp_netif_ip_info_t ip = {};
+  if (esp_netif_get_ip_info(netif, &ip) != ESP_OK) {
+    snprintf(out, out_len, "--.--.--.--");
+    return;
+  }
+
+  snprintf(out, out_len, IPSTR, IP2STR(&ip.ip));
+}
 
 TaskHandle_t screen;
 void screenTask(void *pvParam) {
@@ -117,6 +137,9 @@ void screenTask(void *pvParam) {
   lv_obj_t *valve_indicators[NUM_VALVES]; // Кружочки для индикации активных клапанов
   int valve_label_y_start = 8;
   int valve_label_y_step = 18;
+  const int total_row_y = valve_label_y_start + NUM_VALVES * valve_label_y_step;
+  const int today_row_y = total_row_y + valve_label_y_step;
+  const int i2c_row_y = today_row_y + valve_label_y_step;
   for (int i = 0; i < NUM_VALVES; i++) {
     // Создаём кружочек-индикатор
     valve_indicators[i] = lv_obj_create(lv_scr_act());
@@ -138,7 +161,7 @@ void screenTask(void *pvParam) {
   // Создаём label для общей суммы времени
   lv_obj_t *total_time_label = lv_label_create(lv_scr_act());
   lv_obj_set_style_text_color(total_time_label, lv_color_hex(0xffff00), LV_PART_MAIN); // Жёлтый цвет для выделения
-  lv_obj_align(total_time_label, LV_ALIGN_TOP_RIGHT, -8, valve_label_y_start + NUM_VALVES * valve_label_y_step + 10);
+  lv_obj_align(total_time_label, LV_ALIGN_TOP_RIGHT, -8, total_row_y);
   
   // Инициализируем текст общей суммы
   uint32_t total_time = 0;
@@ -149,15 +172,29 @@ void screenTask(void *pvParam) {
   snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
   lv_label_set_text(total_time_label, total_txt);
 
-  // Под Total выводим список найденных I2C адресов
+  // На месте старого Total показываем количество банок, налитых сегодня
+  lv_obj_t *today_banks_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(today_banks_label, lv_color_hex(0x9dff6b), LV_PART_MAIN);
+  lv_obj_align(today_banks_label, LV_ALIGN_TOP_RIGHT, -8, today_row_y);
+  char today_txt[32];
+  snprintf(today_txt, sizeof(today_txt), "Today: %ld", (long)app_state.today_banks_count);
+  lv_label_set_text(today_banks_label, today_txt);
+
+  // Под Today выводим список найденных I2C адресов
   lv_obj_t *i2c_summary_label = lv_label_create(lv_scr_act());
   lv_obj_set_style_text_color(i2c_summary_label, lv_color_hex(0xffffff), LV_PART_MAIN);
-  // Сдвигаем правее на 60px относительно Total (Total стоит с -8)
-  lv_obj_align(i2c_summary_label, LV_ALIGN_TOP_RIGHT, 60,
-               valve_label_y_start + NUM_VALVES * valve_label_y_step + 10 + 18);
-  lv_obj_set_width(i2c_summary_label, 150);
+  lv_obj_align(i2c_summary_label, LV_ALIGN_TOP_RIGHT, -10, i2c_row_y);
+  lv_obj_set_width(i2c_summary_label, 112);
   lv_label_set_long_mode(i2c_summary_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
   lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
+
+  lv_obj_t *ip_tail_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(ip_tail_label, lv_color_hex(0xffd166), LV_PART_MAIN);
+  lv_obj_set_style_text_font(ip_tail_label, &lv_font_montserrat_12, LV_PART_MAIN);
+  lv_obj_align(ip_tail_label, LV_ALIGN_TOP_RIGHT, -8, i2c_row_y);
+  char ip_tail_txt[24];
+  format_ip_text(ip_tail_txt, sizeof(ip_tail_txt));
+  lv_label_set_text(ip_tail_label, ip_tail_txt);
 
   // Перемещаем кнопки вниз экрана в линию
   int btnY_bottom = 100; // Было 120, стало 100 (подняли ещё выше)
@@ -268,7 +305,12 @@ void screenTask(void *pvParam) {
             char total_txt[32];
             snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
             lv_label_set_text(total_time_label, total_txt);
+            char today_txt[32];
+            snprintf(today_txt, sizeof(today_txt), "Today: %ld", (long)app_state.today_banks_count);
+            lv_label_set_text(today_banks_label, today_txt);
             lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
+            format_ip_text(ip_tail_txt, sizeof(ip_tail_txt));
+            lv_label_set_text(ip_tail_label, ip_tail_txt);
             app_lvgl_unlock();
           }
         }
@@ -351,7 +393,12 @@ void screenTask(void *pvParam) {
           char total_txt[32];
           snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
+          char today_txt[32];
+          snprintf(today_txt, sizeof(today_txt), "Today: %ld", (long)app_state.today_banks_count);
+          lv_label_set_text(today_banks_label, today_txt);
           lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
+          format_ip_text(ip_tail_txt, sizeof(ip_tail_txt));
+          lv_label_set_text(ip_tail_label, ip_tail_txt);
           app_lvgl_unlock();
         }
       }
@@ -414,7 +461,12 @@ void screenTask(void *pvParam) {
           char total_txt[32];
           snprintf(total_txt, sizeof(total_txt), "Total: %.2f s", (double)total_time / 100.0);
           lv_label_set_text(total_time_label, total_txt);
+          char today_txt[32];
+          snprintf(today_txt, sizeof(today_txt), "Today: %ld", (long)app_state.today_banks_count);
+          lv_label_set_text(today_banks_label, today_txt);
           lv_label_set_text(i2c_summary_label, i2c_last_scan_summary());
+          format_ip_text(ip_tail_txt, sizeof(ip_tail_txt));
+          lv_label_set_text(ip_tail_label, ip_tail_txt);
           app_lvgl_unlock();
         }
       } else {
